@@ -91,6 +91,13 @@ obsidian:
   vault_path: ""           # REQUIRED: e.g. C:/Users/hmgad/Documents/ObsidianVault
   daily_notes_folder: ""   # Optional subfolder for daily notes (e.g. "Daily Notes")
 
+google:
+  enable_calendar: false   # Set true after adding secrets/google_oauth_client.json
+  oauth_credentials_file: "secrets/google_oauth_client.json"
+  token_file: "secrets/google_token.json"
+  calendar_id: "primary"
+  timezone: "Europe/Berlin"
+
 scenarios:
   # Existing simple scenarios — migrated to new step format
   ai_tools:

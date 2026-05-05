@@ -372,3 +372,49 @@ Wrap the existing Flask/SocketIO UI in a native Electron desktop shell without r
 - Run `npm install` once to install Electron dependencies.
 - For development: `npm start`.
 - For installer prep: `npm run build:backend`, then `npm run build`.
+
+---
+
+## 2026-05-05 - Phase 6a: Google Calendar + Fullscreen
+
+### Goal
+Start Phase 6 with the expanded academic/productivity track: Google Calendar voice tools and REST endpoints, plus a requested fullscreen mode for the Electron shell.
+
+### Implementation log
+
+**Step 1 - Google OAuth helper**
+- Added `google_auth.py` with token caching under `secrets/google_token.json`.
+- First use opens Google's OAuth desktop flow; later calls refresh silently.
+- Missing packages or missing OAuth client JSON return friendly errors through tool wrappers.
+
+**Step 2 - Calendar wrapper**
+- Added `google_calendar.py` with `today_events`, `upcoming_events`, `next_event`, `list_events`, and `create_event`.
+- Calendar is gated behind `google.enable_calendar`; disabled mode degrades without crashing AXIOM.
+
+**Step 3 - Voice tools and REST API**
+- Added Gemini tools: `today_schedule`, `next_event`, `list_events`, `create_event`.
+- Added `GET /api/calendar/today`.
+- Added `GET /api/calendar/upcoming?days=7`.
+- Added Google dependencies and baseline config.
+
+**Step 4 - Electron fullscreen**
+- Added fullscreen toggle IPC through `electron/preload.js`.
+- Added F11 fullscreen shortcut in `electron/main.js`.
+- Added tray menu item and title-bar fullscreen button.
+
+### Acceptance criteria status
+
+- [x] Calendar tool declarations added to `tools.py`
+- [x] Calendar tools return short speakable summaries
+- [x] OAuth tokens persist under `secrets/` and remain gitignored
+- [x] REST endpoints return JSON and include graceful error payloads
+- [x] Fullscreen works through title-bar button, tray menu, and F11
+- [ ] Live OAuth flow not exercised - requires user-provided `secrets/google_oauth_client.json`
+- [ ] Calendar unit tests - deferred until a tests harness exists
+
+### Setup notes
+
+1. Run `pip install -r requirements.txt`.
+2. Create a Google OAuth desktop client JSON and save it as `secrets/google_oauth_client.json`.
+3. Set `google.enable_calendar: true` in `config.yaml`.
+4. Ask AXIOM: "What's on my schedule today?"

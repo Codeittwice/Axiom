@@ -113,6 +113,20 @@ function createWindow(startMinimized = false) {
 
   mainWindow.loadURL(APP_URL);
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') {
+      event.preventDefault();
+      toggleFullscreen();
+    }
+  });
+
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-changed', true);
+  });
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-changed', false);
+  });
+
   mainWindow.on('close', event => {
     if (isQuitting) return;
     event.preventDefault();
@@ -128,6 +142,7 @@ function createTray() {
   tray.setToolTip('AXIOM Voice Assistant');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open AXIOM', click: () => mainWindow?.show() },
+    { label: 'Toggle Fullscreen', click: () => toggleFullscreen() },
     { type: 'separator' },
     {
       label: 'Quit',
@@ -140,8 +155,16 @@ function createTray() {
   tray.on('double-click', () => mainWindow?.show());
 }
 
+function toggleFullscreen() {
+  if (!mainWindow) return false;
+  const next = !mainWindow.isFullScreen();
+  mainWindow.setFullScreen(next);
+  return next;
+}
+
 function bindIpc() {
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
+  ipcMain.handle('window:toggle-fullscreen', () => toggleFullscreen());
   ipcMain.handle('window:close', () => mainWindow?.hide());
   ipcMain.handle('window:quit', () => {
     isQuitting = true;

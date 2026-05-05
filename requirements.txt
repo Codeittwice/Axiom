@@ -41,6 +41,11 @@ plyer
 # Phase 2: fuzzy project name resolution
 rapidfuzz
 
+# Phase 6a: Google Calendar
+google-auth-oauthlib
+google-api-python-client
+dateparser
+
 # System tray (optional but included)
 pystray
 Pillow

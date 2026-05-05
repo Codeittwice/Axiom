@@ -171,6 +171,25 @@ def api_test_voice():
     return jsonify({"ok": True})
 
 
+@app.route("/api/calendar/today", methods=["GET"])
+def api_calendar_today():
+    try:
+        from google_calendar import today_events
+        return jsonify({"events": today_events(CFG)})
+    except Exception as e:
+        return jsonify({"events": [], "error": str(e)})
+
+
+@app.route("/api/calendar/upcoming", methods=["GET"])
+def api_calendar_upcoming():
+    try:
+        days = int(request.args.get("days", 7))
+        from google_calendar import upcoming_events
+        return jsonify({"events": upcoming_events(days=days, config=CFG)})
+    except Exception as e:
+        return jsonify({"events": [], "error": str(e)})
+
+
 def _speak_preview(text: str) -> None:
     try:
         from voice_assistant import speak

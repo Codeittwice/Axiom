@@ -71,6 +71,8 @@ Then open http://127.0.0.1:5000 (auto-opens on start).
 | `voice_assistant_ui.html` | ✅ Phase 5 | Browser UI with live WebSocket, config tabs, and Electron title bar |
 | `package.json` | ✅ Phase 5 | Electron scripts + electron-builder config |
 | `electron/` | ✅ Phase 5 | Main process, preload bridge, tray/window icon |
+| `google_auth.py` | ✅ Phase 6a | Shared Google OAuth token/service helper |
+| `google_calendar.py` | ✅ Phase 6a | Google Calendar events + creation wrapper |
 | `run.pyw` | ✅ Done | No-console system tray launcher |
 | `scenarios.py` | ✅ Phase 1 | ScenarioEngine — multi-step workflows |
 | `projects.py` | ✅ Phase 2 | ProjectRegistry — fuzzy voice resolution + status |
@@ -240,7 +242,7 @@ First run downloads the model (~200MB).
 
 - [ ] Spotify control via `spotipy` — "play lo-fi music"
 - [ ] Read/write files — "save a note: ..."
-- [ ] Calendar integration (local ICS or Google Calendar API)
+- [x] Google Calendar integration - Phase 6a voice tools + REST endpoints
 - [ ] Screenshot + vision — describe what's on screen
 - [ ] Multi-language support (Whisper supports 99 languages)
 - [ ] Package as `.exe` via PyInstaller

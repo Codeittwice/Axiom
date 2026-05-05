@@ -183,6 +183,43 @@ GEMINI_TOOLS = [{
         },
 
         # ── Developer / Git ─────────────────────────────────────────────────
+        # Calendar (Phase 6a)
+        {
+            "name": "today_schedule",
+            "description": "Read today's Google Calendar schedule. Use for 'what's on my schedule today' or 'what do I have today'.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "next_event",
+            "description": "Read the next upcoming Google Calendar event. Use for 'what's my next meeting' or 'what's next on my calendar'.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "list_events",
+            "description": "List Google Calendar events between two dates or datetimes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start": {"type": "string", "description": "Start date/time, ISO or natural language"},
+                    "end": {"type": "string", "description": "End date/time, ISO or natural language"}
+                },
+                "required": ["start", "end"]
+            }
+        },
+        {
+            "name": "create_event",
+            "description": "Create a Google Calendar event from a title, natural language time, and optional duration.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Event title"},
+                    "when": {"type": "string", "description": "When the event starts, e.g. 'tomorrow at 2pm'"},
+                    "duration_minutes": {"type": "integer", "description": "Duration in minutes; defaults to 60"}
+                },
+                "required": ["title", "when"]
+            }
+        },
+
         {
             "name": "open_repo",
             "description": "Open a code repository in VS Code by its short name.",
@@ -505,6 +542,93 @@ def switch_project(project_name: str) -> str:
     return f"Active project: {project['name']}."
 
 
+def _calendar_enabled() -> bool:
+    return bool((_CFG.get("google", {}) or {}).get("enable_calendar", False))
+
+
+def _event_time_label(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        raw = value.replace("Z", "+00:00")
+        if "T" not in raw:
+            return raw
+        dt = datetime.fromisoformat(raw)
+        return dt.strftime("%a %b %d, %I:%M %p").replace(" 0", " ")
+    except Exception:
+        return value
+
+
+def _event_line(event: dict) -> str:
+    title = event.get("title") or "Untitled event"
+    start = _event_time_label(event.get("start", ""))
+    location = event.get("location") or ""
+    bits = [title]
+    if start:
+        bits.append(start)
+    if location:
+        bits.append(location)
+    return " - ".join(bits)
+
+
+def today_schedule() -> str:
+    if not _calendar_enabled():
+        return "Google Calendar is disabled. Enable google.enable_calendar in config.yaml."
+    try:
+        import google_calendar
+        events = google_calendar.today_events(_CFG)
+    except Exception as e:
+        return f"Could not read today's schedule: {e}"
+    if not events:
+        return "No calendar events today."
+    lines = [_event_line(event) for event in events[:8]]
+    if len(events) > 8:
+        lines.append(f"and {len(events) - 8} more")
+    return "Today's schedule:\n" + "\n".join(f"- {line}" for line in lines)
+
+
+def next_event() -> str:
+    if not _calendar_enabled():
+        return "Google Calendar is disabled. Enable google.enable_calendar in config.yaml."
+    try:
+        import google_calendar
+        event = google_calendar.next_event(_CFG)
+    except Exception as e:
+        return f"Could not read the next event: {e}"
+    if not event:
+        return "No upcoming calendar events found."
+    return f"Next event: {_event_line(event)}."
+
+
+def list_events(start: str, end: str) -> str:
+    if not _calendar_enabled():
+        return "Google Calendar is disabled. Enable google.enable_calendar in config.yaml."
+    try:
+        import google_calendar
+        events = google_calendar.list_events(start, end, _CFG, max_results=12)
+    except Exception as e:
+        return f"Could not list calendar events: {e}"
+    if not events:
+        return "No calendar events found in that range."
+    lines = [_event_line(event) for event in events[:8]]
+    if len(events) > 8:
+        lines.append(f"and {len(events) - 8} more")
+    return "Calendar events:\n" + "\n".join(f"- {line}" for line in lines)
+
+
+def create_event(title: str, when: str, duration_minutes: int = 60) -> str:
+    if not _calendar_enabled():
+        return "Google Calendar is disabled. Enable google.enable_calendar in config.yaml."
+    try:
+        import google_calendar
+        event = google_calendar.create_event(title, when, duration_minutes, _CFG)
+    except Exception as e:
+        return f"Could not create calendar event: {e}"
+    if not event:
+        return "Calendar event could not be created."
+    return f"Created calendar event: {_event_line(event)}."
+
+
 def run_git(command: str, repo_name: str = "") -> str:
     cwd = _resolve_repo_path(repo_name)
     if isinstance(cwd, str) and cwd.startswith("Error"):
@@ -701,6 +825,10 @@ def execute_tool(name: str, inputs: dict) -> str:
         "list_projects":    lambda i: list_projects(),
         "project_status":   lambda i: project_status(i["project_name"]),
         "switch_project":   lambda i: switch_project(i["project_name"]),
+        "today_schedule":   lambda i: today_schedule(),
+        "next_event":       lambda i: next_event(),
+        "list_events":      lambda i: list_events(i["start"], i["end"]),
+        "create_event":     lambda i: create_event(i["title"], i["when"], int(i.get("duration_minutes", 60))),
         "run_git":          lambda i: run_git(i["command"], i.get("repo_name", "")),
         "run_terminal":     lambda i: run_terminal(i["command"], i.get("repo_name", "")),
         "describe_screen":  lambda i: describe_screen(),

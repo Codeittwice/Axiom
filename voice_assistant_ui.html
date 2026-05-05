@@ -33,6 +33,7 @@
     background:transparent;color:var(--text);font-family:'Share Tech Mono',monospace;
     cursor:pointer;}
   .title-bar-controls button:hover{background:rgba(0,212,255,.08);color:var(--accent);}
+  .title-bar-controls button.active{color:var(--green);box-shadow:0 0 10px rgba(0,255,179,.08) inset;}
   .title-bar-controls button:last-child:hover{background:rgba(255,68,102,.16);color:var(--red);}
 
   /* ── sysbar ── */
@@ -190,6 +191,7 @@
     <span class="title-bar-label">AXIOM</span>
     <div class="title-bar-controls">
       <button id="minBtn" aria-label="Minimize">-</button>
+      <button id="fullBtn" aria-label="Toggle fullscreen">[]</button>
       <button id="closeBtn" aria-label="Close">x</button>
     </div>
   </div>
@@ -338,6 +340,14 @@ tick(); setInterval(tick, 1000);
 if (window.axiomWindow?.isElectron) {
   document.body.classList.add('electron');
   document.getElementById('minBtn').onclick = () => window.axiomWindow.minimize();
+  const fullBtn = document.getElementById('fullBtn');
+  fullBtn.onclick = async () => {
+    const isFullscreen = await window.axiomWindow.toggleFullscreen();
+    fullBtn.classList.toggle('active', isFullscreen);
+  };
+  window.axiomWindow.onFullscreenChanged?.(isFullscreen => {
+    fullBtn.classList.toggle('active', isFullscreen);
+  });
   document.getElementById('closeBtn').onclick = () => window.axiomWindow.close();
 }
 
