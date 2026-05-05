@@ -178,6 +178,28 @@
   .history-line{border-left:1px solid var(--border2);padding:.35rem .75rem;font-size:.82rem;line-height:1.45;}
   .history-role{font-family:'Share Tech Mono',monospace;color:var(--accent);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.2rem;}
   .toast{font-family:'Share Tech Mono',monospace;font-size:.68rem;color:var(--green);letter-spacing:.08em;min-height:1rem;}
+  body.with-widgets .wrap{max-width:1280px;display:grid;grid-template-columns:220px minmax(0,720px) 220px;
+    column-gap:1.25rem;align-items:start;}
+  body.with-widgets .title-bar,body.with-widgets .conn-banner,body.with-widgets .sysbar,
+  body.with-widgets .tabs,body.with-widgets .view{grid-column:2;}
+  .side-panel{display:none;flex-direction:column;gap:1rem;position:sticky;top:1rem;}
+  body.with-widgets .side-panel{display:flex;}
+  .side-panel.left{grid-column:1;grid-row:4 / span 2;}
+  .side-panel.right{grid-column:3;grid-row:4 / span 2;}
+  .widget{background:var(--panel);border:1px solid var(--border2);border-radius:2px;
+    padding:.75rem;display:flex;flex-direction:column;gap:.45rem;min-height:84px;}
+  .widget-head{font-family:'Share Tech Mono',monospace;font-size:.62rem;letter-spacing:.14em;color:var(--accent);
+    text-transform:uppercase;border-bottom:1px solid var(--border);padding-bottom:.35rem;}
+  .widget-row{font-size:.76rem;line-height:1.35;display:flex;flex-direction:column;gap:.15rem;}
+  .widget-row .meta{font-family:'Share Tech Mono',monospace;font-size:.6rem;color:var(--muted);}
+  .widget-empty{font-family:'Share Tech Mono',monospace;font-size:.65rem;color:var(--muted);line-height:1.35;}
+  .widget-count{font-family:'Share Tech Mono',monospace;font-size:1.6rem;color:var(--green);}
+  @media (max-width:1100px){
+    body.with-widgets .wrap{grid-template-columns:1fr;max-width:720px;}
+    body.with-widgets .title-bar,body.with-widgets .conn-banner,body.with-widgets .sysbar,
+    body.with-widgets .tabs,body.with-widgets .view,.side-panel.left,.side-panel.right{grid-column:1;grid-row:auto;}
+    .side-panel{position:static;}
+  }
 
   .scanline{position:fixed;inset:0;
     background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);
@@ -214,6 +236,16 @@
     <button class="tab-btn" data-tab="settings">Settings</button>
     <button class="tab-btn" data-tab="history">History</button>
   </div>
+
+  <aside class="side-panel left">
+    <div class="widget" id="w-schedule"></div>
+    <div class="widget" id="w-todos"></div>
+  </aside>
+
+  <aside class="side-panel right">
+    <div class="widget" id="w-projects"></div>
+    <div class="widget" id="w-email"></div>
+  </aside>
 
   <section class="view active" id="view-live">
   <div class="header">
@@ -429,6 +461,54 @@ async function api(path, options={}) {
   return data;
 }
 
+function setWidgetMode(tab) {
+  document.body.classList.toggle('with-widgets', tab === 'live');
+  if (tab === 'live') loadDashboard().catch(e => renderWidget('w-schedule', 'Schedule', [], e.message));
+}
+
+function renderWidget(id, title, rows, emptyText='No data') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const body = rows && rows.length
+    ? rows.map(row => `<div class="widget-row"><span>${escHtml(row.text)}</span>${row.meta ? `<span class="meta">${escHtml(row.meta)}</span>` : ''}</div>`).join('')
+    : `<div class="widget-empty">${escHtml(emptyText)}</div>`;
+  el.innerHTML = `<div class="widget-head">${escHtml(title)}</div>${body}`;
+}
+
+function timeLabel(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString([], { weekday:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+async function loadDashboard() {
+  const data = await api('/api/dashboard');
+  const schedule = data.schedule || {};
+  renderWidget('w-schedule', 'Schedule', (schedule.items || []).map(event => ({
+    text: event.title || 'Untitled event',
+    meta: timeLabel(event.start),
+  })), schedule.error || 'No events');
+
+  const todos = data.todos || {};
+  renderWidget('w-todos', 'Tasks', (todos.items || []).map(item => ({
+    text: item.text || '',
+    meta: item.source || '',
+  })), todos.error || 'No open tasks');
+
+  const projects = data.projects || {};
+  renderWidget('w-projects', 'Projects', (projects.items || []).map(item => ({
+    text: item.name || item.key,
+    meta: item.description || item.key,
+  })), 'No projects');
+
+  const email = data.email || {};
+  const emailRows = email.unread_count === null || email.unread_count === undefined
+    ? []
+    : [{ text: `${email.unread_count} unread`, meta: 'Gmail' }];
+  renderWidget('w-email', 'Email', emailRows, email.error || 'No unread count');
+}
+
 async function loadConfig() {
   currentConfig = await api('/api/config');
   currentProjects = currentConfig.projects || {};
@@ -591,6 +671,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(`view-${btn.dataset.tab}`).classList.add('active');
+    setWidgetMode(btn.dataset.tab);
     if (btn.dataset.tab === 'history') await loadHistory();
   });
 });
@@ -604,6 +685,10 @@ document.getElementById('scenarioSelect').onchange = e => fillScenarioEditor(e.t
 document.getElementById('saveSettingsBtn').onclick = () => saveSettings().catch(e => toast('settingsToast', e.message));
 document.getElementById('previewVoiceBtn').onclick = () => previewVoice().catch(e => toast('settingsToast', e.message));
 document.getElementById('refreshHistoryBtn').onclick = () => loadHistory().catch(e => toast('historyToast', e.message));
+setWidgetMode('live');
+setInterval(() => {
+  if (document.body.classList.contains('with-widgets')) loadDashboard().catch(() => {});
+}, 60000);
 loadConfig().catch(e => addLog('error', `Config load failed: ${e.message}`));
 
 const banner  = document.getElementById('connBanner');

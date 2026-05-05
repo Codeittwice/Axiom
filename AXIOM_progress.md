@@ -412,6 +412,12 @@ Start Phase 6 with the expanded academic/productivity track: Google Calendar voi
 - [ ] Live OAuth flow not exercised - requires user-provided `secrets/google_oauth_client.json`
 - [ ] Calendar unit tests - deferred until a tests harness exists
 
+### Follow-up fix
+
+- Split Google Calendar OAuth into read-only scopes for schedule/list/next-event and write scope only for `create_event`.
+- Added the Live dashboard sidebars from Phase 6f: Schedule, Tasks, Projects, and Email widgets.
+- Added `GET /api/dashboard` with partial-failure handling so disabled integrations show widget-level status instead of breaking the page.
+
 ### Setup notes
 
 1. Run `pip install -r requirements.txt`.

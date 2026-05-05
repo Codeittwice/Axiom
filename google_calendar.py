@@ -13,7 +13,8 @@ import yaml
 from google_auth import get_service
 
 
-CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+CALENDAR_READ_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+CALENDAR_WRITE_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
 
 def _load_config() -> dict:
@@ -42,9 +43,9 @@ def _timezone(config: dict | None = None) -> str:
     return _google(config).get("timezone") or "UTC"
 
 
-def _service(config: dict | None = None):
+def _service(config: dict | None = None, scopes: list[str] | None = None):
     _ensure_enabled(config)
-    return get_service("calendar", "v3", CALENDAR_SCOPES, _cfg(config))
+    return get_service("calendar", "v3", scopes or CALENDAR_READ_SCOPES, _cfg(config))
 
 
 def _parse_datetime(value: str | datetime, config: dict | None = None) -> datetime:
@@ -101,7 +102,7 @@ def list_events(
     max_results: int = 10,
 ) -> list[dict[str, str]]:
     """List events between two datetimes."""
-    service = _service(config)
+    service = _service(config, CALENDAR_READ_SCOPES)
     start = _parse_datetime(start_iso, config).isoformat()
     end = _parse_datetime(end_iso, config).isoformat()
     try:
@@ -148,7 +149,7 @@ def create_event(
     duration_min: int = 60,
     config: dict | None = None,
 ) -> dict[str, str]:
-    service = _service(config)
+    service = _service(config, CALENDAR_WRITE_SCOPES)
     start = _parse_datetime(when, config)
     end = start + timedelta(minutes=max(1, int(duration_min or 60)))
     body = {

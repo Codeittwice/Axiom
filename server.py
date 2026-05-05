@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 import keyboard
@@ -188,6 +189,89 @@ def api_calendar_upcoming():
         return jsonify({"events": upcoming_events(days=days, config=CFG)})
     except Exception as e:
         return jsonify({"events": [], "error": str(e)})
+
+
+def _dashboard_schedule() -> dict:
+    try:
+        google = CFG.get("google", {}) or {}
+        if not google.get("enable_calendar", False):
+            return {"items": [], "error": "Calendar disabled"}
+        token = Path(google.get("token_file") or "secrets/google_token.json")
+        if not token.exists():
+            return {"items": [], "error": "Calendar not connected"}
+        from google_calendar import upcoming_events
+        return {"items": upcoming_events(days=3, config=CFG, max_results=3)}
+    except Exception as e:
+        return {"items": [], "error": str(e)}
+
+
+def _dashboard_todos() -> dict:
+    obsidian = CFG.get("obsidian", {}) or {}
+    vault_raw = str(obsidian.get("vault_path") or "").strip()
+    if not vault_raw:
+        return {"items": [], "error": "Obsidian vault not configured"}
+    vault = Path(vault_raw)
+    if not vault.exists():
+        return {"items": [], "error": "Obsidian vault not configured"}
+
+    scan_paths = obsidian.get("tasks_scan_paths") or []
+    roots = [vault / p for p in scan_paths] if scan_paths else [vault]
+    items = []
+    for root in roots:
+        if len(items) >= 5 or not root.exists():
+            continue
+        for md in root.rglob("*.md"):
+            if len(items) >= 5:
+                break
+            try:
+                for line in md.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("- [ ] "):
+                        items.append({
+                            "text": stripped[6:].strip(),
+                            "source": str(md.relative_to(vault)),
+                        })
+                        break
+            except Exception:
+                continue
+    return {"items": items}
+
+
+def _dashboard_projects() -> dict:
+    projects = CFG.get("projects", {}) or {}
+    items = []
+    for key, project in list(projects.items())[:5]:
+        items.append({
+            "key": key,
+            "name": project.get("name") or key,
+            "description": project.get("description", ""),
+        })
+    return {"items": items}
+
+
+def _dashboard_email() -> dict:
+    try:
+        if not (CFG.get("gmail", {}) or {}).get("enabled", False):
+            return {"unread_count": None, "error": "Gmail disabled"}
+        google = CFG.get("google", {}) or {}
+        token = Path(google.get("token_file") or "secrets/google_token.json")
+        if not token.exists():
+            return {"unread_count": None, "error": "Gmail not connected"}
+        import gmail_client
+        return {"unread_count": gmail_client.unread_count(CFG)}
+    except Exception as e:
+        return {"unread_count": None, "error": str(e)}
+
+
+@app.route("/api/dashboard", methods=["GET"])
+def api_dashboard():
+    return jsonify({
+        "schedule": _dashboard_schedule(),
+        "todos": _dashboard_todos(),
+        "projects": _dashboard_projects(),
+        "email": _dashboard_email(),
+        "ts": datetime.now().isoformat(timespec="seconds"),
+    })
 
 
 def _speak_preview(text: str) -> None:
