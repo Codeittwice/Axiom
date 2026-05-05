@@ -260,3 +260,29 @@ Improve the real voice experience without changing the core Flask/browser archit
 - `AXIOM_progress.md`
 
 **Phase 3 is in progress. Next best step: streaming/interruptible TTS.**
+
+---
+
+## 2026-05-05 - Phase 3: Streaming and Interruptible TTS
+
+### Goal
+Reduce perceived response latency and make AXIOM easier to interrupt during spoken output.
+
+### Implementation log
+
+**Step 1 - Sentence-chunked TTS**
+- Added `tts.sentence_streaming` to `config.yaml`.
+- `speak()` now splits longer responses into sentence-sized chunks before sending them to Edge TTS.
+- This is not full Gemini token streaming yet, but AXIOM can start the first short chunk sooner than waiting on one large synthesized MP3.
+
+**Step 2 - Interrupt while speaking**
+- Added `tts.interruptible` to `config.yaml`.
+- Added a shared `request_activation()` path for hotkey and wake-word activations.
+- If activation happens while AXIOM is speaking, playback is interrupted and the server immediately starts another recording pass.
+- Edge TTS playback checks for interrupts while `pygame` is playing audio. `pyttsx3` remains blocking and only observes the interrupt after `runAndWait()` returns.
+
+### Acceptance criteria status update
+
+- [x] Interrupt-while-speaking works for Edge TTS playback
+- [x] Streaming TTS groundwork added via sentence-chunked playback
+- [ ] Full Gemini token streaming to TTS - not started

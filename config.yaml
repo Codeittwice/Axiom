@@ -18,6 +18,8 @@ whisper:
 tts:
   engine: edge # edge (online, great quality) | pyttsx3 (offline)
   edge_voice: en-US-AndrewNeural # deep male; alternatives: BrianNeural, GuyNeural, ChristopherNeural, RyanNeural (UK)
+  sentence_streaming: true # speak sentence chunks so responses begin sooner
+  interruptible: true # hotkey or wake word can stop playback and listen again
   pyttsx3_rate: 175
   pyttsx3_volume: 0.9
 

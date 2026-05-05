@@ -56,6 +56,7 @@ def assistant_loop():
         init_scenario_engine,
         load_history,
         record_audio,
+        request_activation,
         save_history,
         set_emit,
         speak,
@@ -71,10 +72,11 @@ def assistant_loop():
     hotkey  = CFG["assistant"]["hotkey"]
     wake_started = start_wake_word_listener()
     hotkey_registered = False
+    pending_activation = False
 
     def activate_from_hotkey():
         emit("log", {"level": "system", "text": f"Hotkey {hotkey.upper()} pressed."})
-        _wake_event.set()
+        request_activation("hotkey")
 
     try:
         keyboard.add_hotkey(hotkey, activate_from_hotkey)
@@ -89,7 +91,9 @@ def assistant_loop():
 
     while True:
         # Wait for hotkey or wake word
-        if hotkey_registered or wake_started:
+        if pending_activation:
+            pending_activation = False
+        elif hotkey_registered or wake_started:
             _wake_event.clear()
             _wake_event.wait()
         else:
@@ -132,7 +136,9 @@ def assistant_loop():
             continue
 
         # --- Speak ---
-        speak(reply)
+        pending_activation = speak(reply)
+        if pending_activation:
+            emit("log", {"level": "system", "text": "Listening again after interruption."})
 
 # ─── System tray (optional) ───────────────────────────────────────────────────
 

@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import random
+import re
 import tempfile
 import threading
 import time
@@ -280,16 +281,74 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
 
 # ─── TTS ──────────────────────────────────────────────────────────────────────
 
-def speak(text: str):
+_speech_interrupt = threading.Event()
+_speaking = False
+
+
+def _tts_config() -> dict:
+    return CFG.get("tts", {}) or {}
+
+
+def _split_for_tts(text: str) -> list[str]:
+    """
+    Split long responses into sentence-ish chunks so Edge TTS can start sooner.
+    """
+    if not _tts_config().get("sentence_streaming", True):
+        return [text]
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
+    chunks: list[str] = []
+    current = ""
+    for part in parts or [text]:
+        candidate = f"{current} {part}".strip()
+        if len(candidate) <= 220:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            current = part
+    if current:
+        chunks.append(current)
+    return chunks or [text]
+
+
+def request_activation(source: str = "manual") -> None:
+    """
+    Shared activation path for hotkey and wake word. If AXIOM is speaking,
+    the same event also interrupts playback before the next listen cycle.
+    """
+    if _speaking and _tts_config().get("interruptible", True):
+        _speech_interrupt.set()
+        _send("log", {"level": "system", "text": f"Speech interrupted by {source}."})
+    _wake_event.set()
+
+
+def speak(text: str) -> bool:
+    """
+    Speak text. Returns True when playback was interrupted by a new activation.
+    """
+    global _speaking
+    _speech_interrupt.clear()
+    _speaking = True
+    interrupted = False
     _send("state", {"state": "speaking"})
-    if CFG["tts"]["engine"] == "edge":
-        _speak_edge(text)
-    else:
-        _speak_pyttsx3(text)
-    _send("state", {"state": "idle"})
+    try:
+        for chunk in _split_for_tts(text):
+            if _speech_interrupt.is_set():
+                interrupted = True
+                break
+            if CFG["tts"]["engine"] == "edge":
+                interrupted = _speak_edge(chunk)
+            else:
+                interrupted = _speak_pyttsx3(chunk)
+            if interrupted:
+                break
+    finally:
+        _speaking = False
+        _send("state", {"state": "idle"})
+    return interrupted
 
 
-def _speak_edge(text: str):
+def _speak_edge(text: str) -> bool:
     async def _run():
         import edge_tts
         import pygame
@@ -304,22 +363,29 @@ def _speak_edge(text: str):
         import pygame
         pygame.mixer.music.load(mp3_path)
         pygame.mixer.music.play()
+        interrupted = False
         while pygame.mixer.music.get_busy():
+            if _speech_interrupt.is_set():
+                pygame.mixer.music.stop()
+                interrupted = True
+                break
             time.sleep(0.05)
         pygame.mixer.music.unload()
         os.unlink(mp3_path)
+        return interrupted
     except Exception as e:
         print(f"[AXIOM] edge-tts error ({e}), falling back to pyttsx3.")
-        _speak_pyttsx3(text)
+        return _speak_pyttsx3(text)
 
 
-def _speak_pyttsx3(text: str):
+def _speak_pyttsx3(text: str) -> bool:
     import pyttsx3
     engine = pyttsx3.init()
     engine.setProperty("rate",   CFG["tts"]["pyttsx3_rate"])
     engine.setProperty("volume", CFG["tts"]["pyttsx3_volume"])
     engine.say(text)
     engine.runAndWait()
+    return _speech_interrupt.is_set()
 
 # ─── Project Registry & Scenario Engine ───────────────────────────────────────
 
@@ -436,7 +502,7 @@ def _oww_listener():
                     last_detection = now
                     print("[AXIOM] Wake word detected!")
                     _send("log", {"level": "system", "text": "Wake word detected."})
-                    _wake_event.set()
+                    request_activation("wake word")
     except Exception as e:
         msg = f"Wake word failed ({e}). Hotkey remains active."
         print(f"[AXIOM] {msg}")
