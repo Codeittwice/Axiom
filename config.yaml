@@ -1,0 +1,187 @@
+assistant:
+  name: Axiom
+  hotkey: space # key to press to start recording
+  personality:
+    tone: casual # professional | casual | snarky
+    verbosity: concise # concise | normal | verbose
+  acknowledgements: true # say a short cue before slow tool work
+
+audio:
+  sample_rate: 16000 # Hz — Whisper prefers 16kHz
+  max_record_seconds: 12 # hard cap per utterance
+  vad_energy_threshold: 50 # lower = more sensitive; raise to ~1500 if noisy
+  vad_silence_duration: 1.5 # seconds of silence before stopping
+
+whisper:
+  model: base # tiny | base | small | medium | large
+
+tts:
+  engine: edge # edge (online, great quality) | pyttsx3 (offline)
+  edge_voice: en-US-AndrewNeural # deep male; alternatives: BrianNeural, GuyNeural, ChristopherNeural, RyanNeural (UK)
+  pyttsx3_rate: 175
+  pyttsx3_volume: 0.9
+
+gemini:
+  model: gemini-2.5-flash # free tier — also works: gemini-flash-latest
+  max_tokens: 400 # keep low — responses are spoken aloud
+
+memory:
+  file: memory.json
+  max_history: 50 # message pairs kept across sessions
+  auto_summarize_after: 20 # summarize older turns after this many user turns
+
+server:
+  host: 127.0.0.1
+  port: 5000
+  open_browser: true # auto-open UI on startup
+
+wake_word:
+  enabled: true # listens continuously alongside the SPACE hotkey
+  model: hey_jarvis # closest built-in model to "Hey Axiom"; for true "Hey Axiom" train at github.com/dscripka/openWakeWord
+  model_path: "" # custom .onnx path overrides model
+  threshold: 0.5 # raise if false positives happen
+  cooldown_seconds: 3 # minimum seconds between activations
+  download_retries: 3 # model download attempts before falling back to hotkey only
+
+# Phase 2: First-class projects with rich metadata.
+# Voice resolves names + aliases via fuzzy matching (rapidfuzz, threshold 80).
+# Backwards compat: any repos: entries below that aren't redeclared here are
+# auto-promoted to minimal project entries by ProjectRegistry.
+projects:
+  axiom:
+    name: "AXIOM"
+    aliases: ["axiom voice assistant", "voice assistant", "the assistant"]
+    repo_path: "E:/_DEV/Personal Voice Assistant"
+    description: "Local Windows voice assistant"
+    default_scenario: coding_sequence
+    obsidian_folder: "Projects/AXIOM"
+    websites: [github, claude]
+    tags: [voice, ai, python]
+  # add more, e.g.:
+  # myproject:
+  #   name: "MyProject"
+  #   aliases: ["my project", "the app"]
+  #   repo_path: "C:/path/to/myproject"
+  #   description: "Short pitch"
+  #   default_scenario: coding_sequence
+
+# Legacy flat map — kept for backwards compatibility. ProjectRegistry will
+# promote any keys here that aren't already in projects: above.
+repos:
+  axiom: "E:/_DEV/Personal Voice Assistant"
+  # add more, e.g.:
+  # myproject: "C:/path/to/myproject"
+
+# Map shortcut names to URLs — used by the open_website tool.
+# Say "open my email" or "open github" and AXIOM launches the URL.
+websites:
+  github: "https://github.com"
+  email: "https://mail.google.com"
+  calendar: "https://calendar.google.com"
+  youtube: "https://youtube.com"
+  chatgpt: "https://chat.openai.com"
+  claude: "https://claude.ai"
+
+# Map shortcut names to URLs — used by the open_website tool.
+# Say "open my email" or "open github" and AXIOM launches the URL.
+# Obsidian vault integration
+obsidian:
+  vault_path: ""           # REQUIRED: e.g. C:/Users/hmgad/Documents/ObsidianVault
+  daily_notes_folder: ""   # Optional subfolder for daily notes (e.g. "Daily Notes")
+
+scenarios:
+  # Existing simple scenarios — migrated to new step format
+  ai_tools:
+    description: "Open Claude.ai and ChatGPT side by side"
+    steps:
+      - action: open_website
+        target: chatgpt
+      - action: open_website
+        target: claude
+
+  correspondence:
+    description: "Open email and calendar"
+    steps:
+      - action: open_website
+        target: email
+      - action: open_website
+        target: calendar
+
+  # ── Killer use case: full coding session ─────────────────────────────────
+  coding_sequence:
+    description: "Start a coding session for a project"
+    requires_project: true
+    steps:
+      - action: speak
+        text: "Starting coding sequence for {project_name}."
+      - action: open_repo
+        repo: "{project_name}"
+      - action: wait
+        seconds: 1
+      - action: open_website
+        target: claude
+      - action: open_website
+        target: chatgpt
+      - action: open_website
+        target: github
+      - action: run_git
+        command: "status --short"
+        repo: "{project_name}"
+      - action: speak
+        text: "{project_name} is ready. What are we tackling today?"
+
+  # ── Daily startup ────────────────────────────────────────────────────────
+  morning_routine:
+    description: "Daily startup workflow"
+    steps:
+      - action: speak
+        text: "Good morning. Today is {day}, {date}."
+      - action: tool
+        name: get_weather
+        inputs:
+          location: "Sofia"
+      - action: open_website
+        target: email
+      - action: open_website
+        target: calendar
+      - action: tool
+        name: append_daily_note
+        inputs:
+          content: "Started the day at {time}."
+
+  # ── Focus mode ───────────────────────────────────────────────────────────
+  deep_work:
+    description: "Enter focus mode — lo-fi music, 90-minute timer"
+    steps:
+      - action: tool
+        name: set_volume
+        inputs:
+          level: 30
+      - action: open_website
+        target: "https://www.youtube.com/watch?v=jfKfPfyJRdk"
+      - action: notify
+        title: "AXIOM"
+        message: "Deep work mode active. 90 minute timer set."
+      - action: tool
+        name: set_timer
+        inputs:
+          minutes: 90
+          label: "Deep Work"
+      - action: speak
+        text: "Deep work mode. Ninety minutes. Go."
+
+  # ── End of day ───────────────────────────────────────────────────────────
+  wrap_up:
+    description: "End of day shutdown"
+    steps:
+      - action: ask
+        prompt: "What did you accomplish today?"
+        slot: accomplishments
+      - action: tool
+        name: append_daily_note
+        inputs:
+          content: "End of day: {accomplishments}"
+      - action: run_git
+        command: "status"
+      - action: speak
+        text: "Logged. See you tomorrow."

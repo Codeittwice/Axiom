@@ -1,0 +1,48 @@
+# AXIOM Voice Assistant — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core AI
+google-generativeai
+openai-whisper
+
+# Audio recording
+sounddevice
+scipy
+numpy
+
+# TTS — primary (online, free, high quality)
+edge-tts
+pygame-ce
+
+# TTS — offline fallback
+pyttsx3
+
+# Hotkey activation
+keyboard
+
+# Config & env
+python-dotenv
+pyyaml
+
+# Web server + real-time UI bridge
+flask
+flask-socketio
+
+# Claude tool use: web search
+duckduckgo-search
+
+# Tools: Wikipedia, clipboard, volume, notifications
+wikipedia
+pyperclip
+pycaw
+plyer
+
+# Phase 2: fuzzy project name resolution
+rapidfuzz
+
+# System tray (optional but included)
+pystray
+Pillow
+
+# Optional: wake word detection (uncomment to install)
+openwakeword

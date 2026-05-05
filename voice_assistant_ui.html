@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AXIOM — Voice Intelligence System</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700&family=Share+Tech+Mono&display=swap');
+  :root {
+    --bg:#03050e;--panel:#070b18;--border:#0f1a2e;--border2:#162035;
+    --accent:#00d4ff;--accent2:#0066ff;--text:#c8deff;--muted:#3a5070;
+    --dim:#1a2840;--green:#00ffb3;--warn:#ff6b35;--red:#ff4466;
+    --grid:rgba(0,212,255,0.04);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;
+    padding:2rem 1rem;position:relative;overflow-x:hidden;}
+  body::before{content:'';position:fixed;inset:0;
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:40px 40px;pointer-events:none;}
+  .wrap{width:100%;max-width:720px;display:flex;flex-direction:column;gap:1.5rem;position:relative;}
+
+  /* ── sysbar ── */
+  .sysbar{display:flex;align-items:center;justify-content:space-between;
+    padding:.6rem 1rem;background:var(--panel);border:1px solid var(--border2);
+    border-radius:2px;font-family:'Share Tech Mono',monospace;font-size:.7rem;
+    color:var(--muted);letter-spacing:.1em;}
+  .sysbar-left{display:flex;gap:1.5rem;align-items:center;}
+  .sysbar-dot{display:inline-block;width:6px;height:6px;background:var(--accent);
+    border-radius:50%;box-shadow:0 0 6px var(--accent);
+    animation:blink 2s step-end infinite;margin-right:.4rem;}
+  .sysbar-dot.offline{background:var(--red);box-shadow:0 0 6px var(--red);}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+  /* ── header ── */
+  .header{display:flex;align-items:flex-end;justify-content:space-between;padding:0 .25rem;}
+  .brand{display:flex;flex-direction:column;gap:.2rem;}
+  .brand-name{font-size:3.2rem;font-weight:700;letter-spacing:.25em;color:var(--text);line-height:1;position:relative;}
+  .brand-name::after{content:'';position:absolute;bottom:-4px;left:0;width:100%;height:1px;
+    background:linear-gradient(90deg,var(--accent),transparent);}
+  .brand-sub{font-family:'Share Tech Mono',monospace;font-size:.65rem;color:var(--accent);
+    letter-spacing:.3em;text-transform:uppercase;}
+  .header-meta{font-family:'Share Tech Mono',monospace;font-size:.65rem;color:var(--muted);
+    text-align:right;line-height:1.8;}
+
+  /* ── viz panel ── */
+  .viz-panel{background:var(--panel);border:1px solid var(--border2);border-radius:2px;
+    padding:2rem;display:flex;flex-direction:column;align-items:center;gap:1.5rem;
+    position:relative;overflow:hidden;}
+  .viz-panel::before,.viz-panel::after{content:'';position:absolute;width:16px;height:16px;
+    border-color:rgba(0,212,255,.4);border-style:solid;}
+  .viz-panel::before{top:8px;right:8px;border-width:1px 1px 0 0;}
+  .viz-panel::after{bottom:8px;left:8px;border-width:0 0 1px 1px;}
+  .ring-wrap{position:relative;width:180px;height:180px;display:flex;align-items:center;justify-content:center;}
+  .ring{position:absolute;inset:0;border-radius:50%;border:1px solid transparent;}
+  .ring-1{border-color:rgba(0,212,255,.6);animation:ringRotate 8s linear infinite;}
+  .ring-2{inset:12px;border-color:rgba(0,102,255,.4);animation:ringRotate 5s linear infinite reverse;border-style:dashed;}
+  .ring-3{inset:28px;border-color:rgba(0,212,255,.2);animation:ringRotate 12s linear infinite;}
+  @keyframes ringRotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  .ring-1::before{content:'';position:absolute;top:-3px;left:50%;transform:translateX(-50%);
+    width:6px;height:6px;background:var(--accent);border-radius:50%;box-shadow:0 0 8px var(--accent);}
+  .ring-center{position:relative;z-index:2;width:90px;height:90px;border-radius:50%;
+    background:var(--bg);border:1px solid var(--border2);display:flex;align-items:center;
+    justify-content:center;flex-direction:column;gap:.2rem;
+    transition:border-color .3s;}
+  .ring-state-icon{font-size:1.4rem;line-height:1;}
+  .ring-state-text{font-family:'Share Tech Mono',monospace;font-size:.55rem;color:var(--accent);
+    letter-spacing:.15em;text-transform:uppercase;transition:color .3s;}
+
+  /* ── freq bars ── */
+  .freq-bars{display:flex;align-items:flex-end;gap:3px;height:40px;}
+  .freq-bar{width:4px;background:var(--accent2);border-radius:1px;opacity:.25;transition:opacity .2s;}
+  .freq-bars.active .freq-bar{opacity:1;animation:freqAnim .8s ease-in-out infinite alternate;}
+  .freq-bar:nth-child(1){height:8px;animation-delay:.00s}
+  .freq-bar:nth-child(2){height:14px;animation-delay:.05s}
+  .freq-bar:nth-child(3){height:22px;animation-delay:.10s}
+  .freq-bar:nth-child(4){height:30px;animation-delay:.15s}
+  .freq-bar:nth-child(5){height:38px;animation-delay:.20s}
+  .freq-bar:nth-child(6){height:32px;animation-delay:.25s}
+  .freq-bar:nth-child(7){height:40px;animation-delay:.30s}
+  .freq-bar:nth-child(8){height:34px;animation-delay:.25s}
+  .freq-bar:nth-child(9){height:28px;animation-delay:.20s}
+  .freq-bar:nth-child(10){height:20px;animation-delay:.15s}
+  .freq-bar:nth-child(11){height:12px;animation-delay:.10s}
+  .freq-bar:nth-child(12){height:6px;animation-delay:.05s}
+  @keyframes freqAnim{from{transform:scaleY(.3)}to{transform:scaleY(1)}}
+
+  /* ── status row ── */
+  .status-row{display:flex;gap:1rem;align-items:center;width:100%;justify-content:center;flex-wrap:wrap;}
+  .status-item{font-family:'Share Tech Mono',monospace;font-size:.65rem;color:var(--muted);
+    letter-spacing:.1em;display:flex;align-items:center;gap:.4rem;transition:color .3s;}
+  .status-item .dot{width:5px;height:5px;border-radius:50%;background:var(--muted);transition:background .3s;}
+  .status-item.on .dot{background:var(--green);box-shadow:0 0 5px var(--green);}
+  .status-item.on{color:var(--green);}
+  .status-item.warn .dot{background:var(--warn);box-shadow:0 0 5px var(--warn);}
+  .status-item.warn{color:var(--warn);}
+
+  /* ── terminal ── */
+  .terminal{background:#020509;border:1px solid var(--border2);border-radius:2px;overflow:hidden;}
+  .terminal-header{background:var(--panel);border-bottom:1px solid var(--border2);
+    padding:.5rem 1rem;display:flex;align-items:center;justify-content:space-between;
+    font-family:'Share Tech Mono',monospace;font-size:.65rem;color:var(--muted);letter-spacing:.12em;}
+  .terminal-dots{display:flex;gap:5px;}
+  .terminal-dots span{width:8px;height:8px;border-radius:50%;background:var(--border2);}
+  .terminal-body{padding:1rem;min-height:130px;max-height:260px;overflow-y:auto;
+    display:flex;flex-direction:column;gap:.85rem;}
+  .terminal-body::-webkit-scrollbar{width:3px;}
+  .terminal-body::-webkit-scrollbar-thumb{background:var(--border2);}
+  .log-line{display:flex;gap:.75rem;align-items:flex-start;font-size:.88rem;
+    line-height:1.5;animation:fadeIn .3s ease;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+  .log-prefix{font-family:'Share Tech Mono',monospace;font-size:.65rem;letter-spacing:.06em;
+    padding:.2rem .5rem;border-radius:1px;flex-shrink:0;margin-top:2px;}
+  .log-prefix.user{background:rgba(0,102,255,.15);color:var(--accent2);border:1px solid rgba(0,102,255,.3);}
+  .log-prefix.axiom{background:rgba(0,255,179,.08);color:var(--green);border:1px solid rgba(0,255,179,.2);}
+  .log-prefix.system{background:rgba(0,212,255,.06);color:var(--muted);border:1px solid var(--border2);}
+  .log-prefix.tool{background:rgba(255,107,53,.08);color:var(--warn);border:1px solid rgba(255,107,53,.25);}
+  .log-prefix.error{background:rgba(255,68,102,.08);color:var(--red);border:1px solid rgba(255,68,102,.25);}
+  .log-text{color:var(--text);}
+  .log-text.muted{color:var(--muted);}
+  .terminal-empty{font-family:'Share Tech Mono',monospace;font-size:.7rem;color:var(--muted);
+    letter-spacing:.08em;margin:auto;text-align:center;}
+  .cursor{display:inline-block;width:8px;height:14px;background:var(--accent);
+    opacity:.8;animation:cursorBlink 1s step-end infinite;vertical-align:middle;margin-left:2px;}
+  @keyframes cursorBlink{0%,100%{opacity:.8}50%{opacity:0}}
+
+  /* ── connection banner ── */
+  .conn-banner{font-family:'Share Tech Mono',monospace;font-size:.7rem;letter-spacing:.12em;
+    text-align:center;padding:.5rem;border-radius:2px;transition:all .3s;}
+  .conn-banner.connecting{color:var(--warn);border:1px solid rgba(255,107,53,.3);background:rgba(255,107,53,.05);}
+  .conn-banner.connected{display:none;}
+  .conn-banner.disconnected{color:var(--red);border:1px solid rgba(255,68,102,.3);background:rgba(255,68,102,.05);}
+
+  .scanline{position:fixed;inset:0;
+    background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);
+    pointer-events:none;}
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+<div class="wrap">
+
+  <div class="conn-banner connecting" id="connBanner">⬡ CONNECTING TO AXIOM BACKEND…</div>
+
+  <div class="sysbar">
+    <div class="sysbar-left">
+      <span><span class="sysbar-dot" id="sysDot"></span><span id="sysStatus">CONNECTING</span></span>
+      <span>BUILD v0.2.0</span>
+      <span>STACK: WHISPER · CLAUDE · EDGE-TTS</span>
+    </div>
+    <span id="clock">--:--:--</span>
+  </div>
+
+  <div class="header">
+    <div class="brand">
+      <div class="brand-name">AXIOM</div>
+      <div class="brand-sub">Voice Intelligence System</div>
+    </div>
+    <div class="header-meta">
+      <div>MODEL: gemini-2.0-flash</div>
+      <div>STT: whisper-base</div>
+      <div>TTS: edge-tts</div>
+    </div>
+  </div>
+
+  <div class="viz-panel">
+    <div class="ring-wrap">
+      <div class="ring ring-1"></div>
+      <div class="ring ring-2"></div>
+      <div class="ring ring-3"></div>
+      <div class="ring-center" id="ringCenter">
+        <div class="ring-state-icon" id="stateIcon">⬡</div>
+        <div class="ring-state-text" id="stateText">connecting</div>
+      </div>
+    </div>
+    <div class="freq-bars" id="freqBars">
+      <div class="freq-bar"></div><div class="freq-bar"></div><div class="freq-bar"></div>
+      <div class="freq-bar"></div><div class="freq-bar"></div><div class="freq-bar"></div>
+      <div class="freq-bar"></div><div class="freq-bar"></div><div class="freq-bar"></div>
+      <div class="freq-bar"></div><div class="freq-bar"></div><div class="freq-bar"></div>
+    </div>
+    <div class="status-row">
+      <div class="status-item" id="statusSocket"><div class="dot"></div>SOCKET</div>
+      <div class="status-item" id="statusMic"><div class="dot"></div>MIC</div>
+      <div class="status-item" id="statusTTS"><div class="dot"></div>TTS</div>
+      <div class="status-item" id="statusTool"><div class="dot"></div>TOOLS</div>
+    </div>
+  </div>
+
+  <div class="terminal">
+    <div class="terminal-header">
+      <span>// SESSION LOG</span>
+      <div class="terminal-dots"><span></span><span></span><span></span></div>
+    </div>
+    <div class="terminal-body" id="terminalBody">
+      <div class="terminal-empty" id="emptyLog">awaiting input…<span class="cursor"></span></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+// ── Clock ──────────────────────────────────────────────────────────────────
+function tick() { document.getElementById('clock').textContent = new Date().toTimeString().slice(0,8); }
+tick(); setInterval(tick, 1000);
+
+// ── State definitions ──────────────────────────────────────────────────────
+const STATES = {
+  idle:         { icon:'🎙',  text:'idle',         freq:false, mic:false,  tts:false },
+  listening:    { icon:'◎',   text:'listening',    freq:true,  mic:true,   tts:false },
+  transcribing: { icon:'⬡',   text:'processing',   freq:false, mic:false,  tts:false },
+  thinking:     { icon:'◈',   text:'thinking',     freq:false, mic:false,  tts:false },
+  tool:         { icon:'⚙',   text:'tool',         freq:false, mic:false,  tts:false },
+  speaking:     { icon:'◈',   text:'output',       freq:true,  mic:false,  tts:true  },
+  connecting:   { icon:'⬡',   text:'connecting',   freq:false, mic:false,  tts:false },
+};
+
+const stateIcon  = document.getElementById('stateIcon');
+const stateText  = document.getElementById('stateText');
+const freqBars   = document.getElementById('freqBars');
+const statusMic  = document.getElementById('statusMic');
+const statusTTS  = document.getElementById('statusTTS');
+const statusTool = document.getElementById('statusTool');
+const statusSock = document.getElementById('statusSocket');
+
+function setState(s) {
+  const st = STATES[s] || STATES.idle;
+  stateIcon.textContent = st.icon;
+  stateText.textContent = st.text;
+  freqBars.className    = 'freq-bars' + (st.freq ? ' active' : '');
+  statusMic.className   = 'status-item' + (st.mic  ? ' on' : '');
+  statusTTS.className   = 'status-item' + (st.tts  ? ' on' : '');
+  if (s === 'tool') statusTool.className = 'status-item warn';
+  else statusTool.className = 'status-item';
+}
+
+// ── Terminal log ───────────────────────────────────────────────────────────
+const termBody = document.getElementById('terminalBody');
+
+function addLog(role, text) {
+  const empty = document.getElementById('emptyLog');
+  if (empty) empty.remove();
+
+  const labels = { user:'USR', axiom:'AXM', system:'SYS', tool:'TOOL', error:'ERR', warn:'WARN' };
+  const line   = document.createElement('div');
+  line.className = 'log-line';
+
+  const roleClass = ['user','axiom','system','tool','error'].includes(role) ? role : 'system';
+  const label     = labels[role] || 'SYS';
+  const textClass = (role === 'system' || role === 'warn') ? 'log-text muted' : 'log-text';
+
+  line.innerHTML = `<span class="log-prefix ${roleClass}">${label}</span><span class="${textClass}">${escHtml(text)}</span>`;
+  termBody.appendChild(line);
+  termBody.scrollTop = termBody.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── SocketIO connection ────────────────────────────────────────────────────
+const banner  = document.getElementById('connBanner');
+const sysDot  = document.getElementById('sysDot');
+const sysStat = document.getElementById('sysStatus');
+
+const socket  = io({ reconnectionDelay: 1000, reconnectionDelayMax: 5000 });
+
+socket.on('connect', () => {
+  banner.className  = 'conn-banner connected';
+  sysDot.className  = 'sysbar-dot';
+  sysStat.textContent = 'SYS:ONLINE';
+  statusSock.className = 'status-item on';
+  setState('idle');
+});
+
+socket.on('disconnect', () => {
+  banner.className  = 'conn-banner disconnected';
+  banner.textContent = '✕ CONNECTION LOST — IS server.py RUNNING?';
+  sysDot.className  = 'sysbar-dot offline';
+  sysStat.textContent = 'OFFLINE';
+  statusSock.className = 'status-item';
+  setState('connecting');
+});
+
+socket.on('connect_error', () => {
+  banner.className  = 'conn-banner connecting';
+  banner.textContent = '⬡ CONNECTING TO AXIOM BACKEND…';
+  sysDot.className  = 'sysbar-dot offline';
+  setState('connecting');
+});
+
+// ── Backend events ─────────────────────────────────────────────────────────
+socket.on('state', data => {
+  setState(data.state);
+});
+
+socket.on('transcript', data => {
+  addLog('user', data.text);
+});
+
+socket.on('response', data => {
+  addLog('axiom', data.text);
+});
+
+socket.on('tool', data => {
+  const detail = data.input ? JSON.stringify(data.input) : '';
+  addLog('tool', `${data.name}(${detail})`);
+  setState('tool');
+});
+
+socket.on('scenario_step', data => {
+  const idx = (data.index ?? 0) + 1;
+  addLog('system', `▸ scenario "${data.scenario}" — step ${idx}/${data.total} [${data.step}]`);
+});
+
+socket.on('log', data => {
+  const role = data.level || 'system';
+  addLog(role, data.text);
+});
+
+socket.on('error', data => {
+  addLog('error', data.message || data.text || 'Unknown error');
+  setState('idle');
+});
+</script>
+</body>
+</html>
