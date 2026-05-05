@@ -15,6 +15,7 @@ import re
 import tempfile
 import threading
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -230,6 +231,23 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
 
     if has_calendar and any(word in text for word in config_words):
         return "calendar_status", {}
+    if has_calendar and "this week" in text:
+        now = datetime.now().astimezone()
+        end = (now + timedelta(days=7 - now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        return "list_events", {"start": now.isoformat(), "end": end.isoformat()}
+    if has_calendar and "next week" in text:
+        now = datetime.now().astimezone()
+        start = (now + timedelta(days=7 - now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=7)
+        return "list_events", {"start": start.isoformat(), "end": end.isoformat()}
+    if has_calendar and "tomorrow" in text:
+        start = (datetime.now().astimezone() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        return "list_events", {"start": start.isoformat(), "end": end.isoformat()}
+    if has_calendar and "this month" in text:
+        now = datetime.now().astimezone()
+        end = (now.replace(day=28) + timedelta(days=4)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return "list_events", {"start": now.isoformat(), "end": end.isoformat()}
     if "schedule" in text and ("today" in text or "what" in text or "what's" in text):
         return "today_schedule", {}
     if "calendar" in text and "today" in text:
