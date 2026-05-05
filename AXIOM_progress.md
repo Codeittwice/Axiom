@@ -234,11 +234,19 @@ Improve the real voice experience without changing the core Flask/browser archit
 **Step 5 - Custom wake-word preparation**
 - Added `train_wake_word.py`, a local sample collector for positive "Hey Axiom" clips and negative background clips.
 - The script prepares data for the openWakeWord training pipeline; it does not pretend to complete model training locally.
+- Decision: keep the built-in `hey_jarvis` model for now. Custom "Hey Axiom" training is deferred.
+
+### Todo
+
+- [ ] Keep `wake_word.model: hey_jarvis` active for day-to-day use.
+- [ ] Collect wake-word samples later with `python train_wake_word.py`.
+- [ ] Train/export `custom_models/hey_axiom.onnx` through the official openWakeWord training pipeline.
+- [ ] Switch `config.yaml` from `wake_word.model: hey_jarvis` to `wake_word.model_path: "custom_models/hey_axiom.onnx"` after the model is exported.
 
 ### Acceptance criteria status
 
 - [x] Wake word has retry, threshold, cooldown, model-path support, and graceful hotkey fallback
-- [ ] Custom "Hey Axiom" model trained - sample collection helper added, exported model still pending
+- [ ] Custom "Hey Axiom" model trained - deferred; use `hey_jarvis` for now
 - [ ] Interrupt-while-speaking works - not started
 - [ ] Streaming TTS reduces latency by >=30% - not started
 - [x] Conversation auto-summarizes past configured turn limit

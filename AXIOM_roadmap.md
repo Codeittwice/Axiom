@@ -131,7 +131,7 @@
 |---|---|---|
 | Vision (describe screen) | Screenshot → Gemini vision | ✅ |
 | Memory across sessions | Persistent conversation history | ✅ |
-| Custom wake word "Hey Axiom" | Train model at github.com/dscripka/openWakeWord | 📋 |
+| Custom wake word "Hey Axiom" | Deferred; keep `hey_jarvis` for now, later collect samples and export `hey_axiom.onnx` | 📋 |
 | Per-app personality | Different tone for coding vs relaxing | 💡 |
 | Voice emotion detection | Detect stress/urgency in voice | 💡 |
 | Proactive reminders | AXIOM speaks unprompted at set times | 💡 |
