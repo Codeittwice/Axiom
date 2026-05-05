@@ -73,6 +73,9 @@ Then open http://127.0.0.1:5000 (auto-opens on start).
 | `electron/` | ✅ Phase 5 | Main process, preload bridge, tray/window icon |
 | `google_auth.py` | ✅ Phase 6a | Shared Google OAuth token/service helper |
 | `google_calendar.py` | ✅ Phase 6a | Google Calendar events + creation wrapper |
+| `gmail_client.py` | ✅ Phase 6 | Read-only Gmail triage helper |
+| `spotify_client.py` | ✅ Phase 6 | Spotify OAuth/playback helper |
+| `tests/test_tools.py` | ✅ Phase 6 | Unit tests for old advanced tools |
 | `run.pyw` | ✅ Done | No-console system tray launcher |
 | `scenarios.py` | ✅ Phase 1 | ScenarioEngine — multi-step workflows |
 | `projects.py` | ✅ Phase 2 | ProjectRegistry — fuzzy voice resolution + status |
@@ -240,10 +243,10 @@ First run downloads the model (~200MB).
 
 ## Future Ideas
 
-- [ ] Spotify control via `spotipy` — "play lo-fi music"
-- [ ] Read/write files — "save a note: ..."
+- [x] Spotify control via `spotipy` — "play lo-fi music"
+- [x] Read/write/search/explain files inside configured repos
 - [x] Google Calendar integration - Phase 6a voice tools + REST endpoints
-- [ ] Screenshot + vision — describe what's on screen
+- [x] Screenshot + vision — describe what's on screen
 - [ ] Multi-language support (Whisper supports 99 languages)
 - [ ] Package as `.exe` via PyInstaller
 - [ ] Custom "Hey Axiom" wake word training (openwakeword)

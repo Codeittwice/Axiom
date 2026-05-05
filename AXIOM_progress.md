@@ -418,3 +418,44 @@ Start Phase 6 with the expanded academic/productivity track: Google Calendar voi
 2. Create a Google OAuth desktop client JSON and save it as `secrets/google_oauth_client.json`.
 3. Set `google.enable_calendar: true` in `config.yaml`.
 4. Ask AXIOM: "What's on my schedule today?"
+
+---
+
+## 2026-05-05 - Phase 6: Old Advanced Tools
+
+### Goal
+Implement the original Phase 6 advanced-tools track after the newer Calendar/academic slice: Spotify, code intelligence, Gmail triage, and Home Assistant.
+
+### Implementation log
+
+**Step 1 - Spotify**
+- Added `spotify_client.py` with spotipy OAuth caching in `secrets/spotify_token.json`.
+- Added tools: `spotify_play`, `spotify_control`, `spotify_now_playing`.
+- Disabled/missing credentials return setup guidance instead of crashing.
+
+**Step 2 - Code intelligence**
+- Added tools: `create_file`, `read_file`, `search_codebase`, `summarize_diff`, `explain_file`.
+- File operations are constrained to the resolved repo root and reject path traversal.
+- Diff/file explanation uses Gemini when `GEMINI_API_KEY` is available and falls back to local summaries.
+
+**Step 3 - Gmail triage**
+- Added `gmail_client.py` using the existing Google OAuth helper with `gmail.readonly`.
+- Added tools: `unread_count`, `last_emails`, `summarize_inbox`.
+- Responses include senders, subjects, and snippets only; no full email bodies.
+
+**Step 4 - Home Assistant**
+- Added tools: `ha_get_state` and `ha_call_service`.
+- Config supports URL + bearer token, with `.env` token fallback via `HOME_ASSISTANT_TOKEN`.
+
+**Step 5 - Tests**
+- Added `tests/test_tools.py` using `unittest`.
+- Covers disabled integration fallbacks, code-file roundtrip, and repo-root path escape rejection.
+
+### Acceptance criteria status
+
+- [x] Each old Phase 6 tool has a Gemini declaration in `tools.py`
+- [x] Each old Phase 6 tool is wired in `execute_tool()`
+- [x] OAuth/service tokens are expected under `secrets/`, already gitignored
+- [x] Tools degrade gracefully when not configured
+- [x] Unit tests added for the local/fallback portions
+- [ ] Live Spotify/Gmail/Home Assistant OAuth/API flows not exercised - requires user credentials/devices

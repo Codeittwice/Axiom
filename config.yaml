@@ -98,6 +98,23 @@ google:
   calendar_id: "primary"
   timezone: "Europe/Berlin"
 
+spotify:
+  enabled: false
+  client_id: ""
+  client_secret: ""
+  redirect_uri: "http://127.0.0.1:8888/callback"
+  cache_path: "secrets/spotify_token.json"
+
+gmail:
+  enabled: false
+  scopes: ["https://www.googleapis.com/auth/gmail.readonly"]
+  max_results: 20
+
+home_assistant:
+  enabled: false
+  url: ""                  # e.g. http://homeassistant.local:8123
+  token: ""                # Prefer HOME_ASSISTANT_TOKEN in .env for real use
+
 scenarios:
   # Existing simple scenarios — migrated to new step format
   ai_tools:

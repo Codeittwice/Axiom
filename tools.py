@@ -8,12 +8,17 @@ To add a new tool:
 """
 
 import io
+import json
+import os
 import subprocess
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ─── Load config (tools need repos, websites, obsidian paths) ─────────────────
 with open("config.yaml") as _f:
@@ -217,6 +222,144 @@ GEMINI_TOOLS = [{
                     "duration_minutes": {"type": "integer", "description": "Duration in minutes; defaults to 60"}
                 },
                 "required": ["title", "when"]
+            }
+        },
+
+        # Spotify (Phase 6 old advanced tools)
+        {
+            "name": "spotify_play",
+            "description": "Search Spotify and play a track. Use for 'play lo-fi on Spotify' or 'play {song}'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Song, artist, album, or search phrase"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "spotify_control",
+            "description": "Control Spotify playback. Actions: play, pause, next, previous, volume_up, volume_down.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "play, pause, next, previous, volume_up, volume_down"}
+                },
+                "required": ["action"]
+            }
+        },
+        {
+            "name": "spotify_now_playing",
+            "description": "Tell the user what Spotify is currently playing.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+
+        # Code intelligence (Phase 6 old advanced tools)
+        {
+            "name": "create_file",
+            "description": "Create a new file inside a configured project repository. Does not overwrite existing files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file path inside the repo"},
+                    "content": {"type": "string", "description": "File contents"},
+                    "repo_name": {"type": "string", "description": "Optional project/repo name; defaults to active project or current repo"}
+                },
+                "required": ["path", "content"]
+            }
+        },
+        {
+            "name": "read_file",
+            "description": "Read a file from a configured project repository.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file path inside the repo"},
+                    "repo_name": {"type": "string", "description": "Optional project/repo name; defaults to active project or current repo"}
+                },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "search_codebase",
+            "description": "Search code/text files inside a configured project repository.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Text to search for"},
+                    "repo_name": {"type": "string", "description": "Optional project/repo name; defaults to active project or current repo"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "summarize_diff",
+            "description": "Summarize the current git diff in a configured project repository.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_name": {"type": "string", "description": "Optional project/repo name; defaults to active project or current repo"}
+                }
+            }
+        },
+        {
+            "name": "explain_file",
+            "description": "Explain a source file from a configured project repository using Gemini when available.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file path inside the repo"},
+                    "repo_name": {"type": "string", "description": "Optional project/repo name; defaults to active project or current repo"}
+                },
+                "required": ["path"]
+            }
+        },
+
+        # Email triage (Phase 6 old advanced tools)
+        {
+            "name": "unread_count",
+            "description": "Read the number of unread Gmail messages.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "last_emails",
+            "description": "Read senders, subjects, and short snippets for the latest Gmail messages. Never returns full bodies.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "n": {"type": "integer", "description": "Number of recent emails, default 5"}
+                }
+            }
+        },
+        {
+            "name": "summarize_inbox",
+            "description": "Summarize Gmail unread count and the latest few email subjects/snippets.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+
+        # Smart home (Phase 6 old advanced tools)
+        {
+            "name": "ha_get_state",
+            "description": "Get a Home Assistant entity state.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "string", "description": "Entity id, e.g. light.office"}
+                },
+                "required": ["entity_id"]
+            }
+        },
+        {
+            "name": "ha_call_service",
+            "description": "Call a Home Assistant service.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "domain": {"type": "string", "description": "Service domain, e.g. light"},
+                    "service": {"type": "string", "description": "Service name, e.g. turn_on"},
+                    "data": {"type": "object", "description": "Service data JSON"}
+                },
+                "required": ["domain", "service"]
             }
         },
 
@@ -629,6 +772,261 @@ def create_event(title: str, when: str, duration_minutes: int = 60) -> str:
     return f"Created calendar event: {_event_line(event)}."
 
 
+def spotify_play(query: str) -> str:
+    try:
+        import spotify_client
+        return spotify_client.play(query, _CFG)
+    except Exception as e:
+        return f"Spotify play failed: {e}"
+
+
+def spotify_control(action: str) -> str:
+    try:
+        import spotify_client
+        return spotify_client.control(action, _CFG)
+    except Exception as e:
+        return f"Spotify control failed: {e}"
+
+
+def spotify_now_playing() -> str:
+    try:
+        import spotify_client
+        return spotify_client.now_playing(_CFG)
+    except Exception as e:
+        return f"Spotify status failed: {e}"
+
+
+def _repo_root(repo_name: str = "") -> Path:
+    repo_name = (repo_name or "").strip()
+    if _project_registry is not None:
+        project = _project_registry.resolve(repo_name) if repo_name else _project_registry.get_active()
+        if project and project.get("repo_path"):
+            return Path(project["repo_path"]).resolve()
+
+    if repo_name:
+        path = _REPOS.get(repo_name.lower())
+        if not path:
+            raise ValueError(f"Repo '{repo_name}' not found.")
+        return Path(path).resolve()
+
+    return Path(".").resolve()
+
+
+def _safe_repo_path(path: str, repo_name: str = "") -> tuple[Path, Path]:
+    root = _repo_root(repo_name)
+    requested = Path(path)
+    target = requested.resolve() if requested.is_absolute() else (root / requested).resolve()
+    if target != root and root not in target.parents:
+        raise ValueError("Path escapes the repository root.")
+    return root, target
+
+
+def _is_probably_text(path: Path) -> bool:
+    if path.stat().st_size > 512_000:
+        return False
+    try:
+        path.read_text(encoding="utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+    except Exception:
+        return False
+
+
+def create_file(path: str, content: str, repo_name: str = "") -> str:
+    try:
+        root, target = _safe_repo_path(path, repo_name)
+        if target.exists():
+            return f"File already exists: {target.relative_to(root)}."
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return f"Created file: {target.relative_to(root)}."
+    except Exception as e:
+        return f"Could not create file: {e}"
+
+
+def read_file(path: str, repo_name: str = "") -> str:
+    try:
+        root, target = _safe_repo_path(path, repo_name)
+        if not target.exists() or not target.is_file():
+            return f"File not found: {path}."
+        if not _is_probably_text(target):
+            return f"File is too large or not plain text: {target.relative_to(root)}."
+        text = target.read_text(encoding="utf-8", errors="replace")
+        if len(text) > 4000:
+            text = text[:4000] + "\n...truncated..."
+        return f"{target.relative_to(root)}:\n{text}"
+    except Exception as e:
+        return f"Could not read file: {e}"
+
+
+def search_codebase(query: str, repo_name: str = "") -> str:
+    try:
+        root = _repo_root(repo_name)
+        skip_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv", "dist", "build"}
+        matches = []
+        needle = query.lower()
+        for path in root.rglob("*"):
+            if len(matches) >= 20:
+                break
+            if any(part in skip_dirs for part in path.relative_to(root).parts):
+                continue
+            if not path.is_file() or not _is_probably_text(path):
+                continue
+            try:
+                for idx, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+                    if needle in line.lower():
+                        rel = path.relative_to(root)
+                        matches.append(f"{rel}:{idx}: {line.strip()[:160]}")
+                        break
+            except Exception:
+                continue
+        if not matches:
+            return f"No codebase matches for '{query}'."
+        return "\n".join(matches)
+    except Exception as e:
+        return f"Code search failed: {e}"
+
+
+def _gemini_summarize(prompt: str, body: str, fallback: str) -> str:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return fallback
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(_CFG["gemini"]["model"])
+        response = model.generate_content(f"{prompt}\n\n{body[:12000]}")
+        return (response.text or "").strip()[:1200] or fallback
+    except Exception:
+        return fallback
+
+
+def summarize_diff(repo_name: str = "") -> str:
+    try:
+        root = _repo_root(repo_name)
+        stat = subprocess.run(
+            "git diff --stat", shell=True, capture_output=True, text=True, cwd=root
+        ).stdout.strip()
+        diff = subprocess.run(
+            "git diff --unified=2", shell=True, capture_output=True, text=True, cwd=root
+        ).stdout.strip()
+        if not diff and not stat:
+            return "No git diff in this repo."
+        fallback = f"Git diff summary:\n{stat or diff[:900]}"
+        return _gemini_summarize(
+            "Summarize this git diff for a developer in 5 concise bullets.",
+            f"{stat}\n\n{diff}",
+            fallback,
+        )
+    except Exception as e:
+        return f"Could not summarize diff: {e}"
+
+
+def explain_file(path: str, repo_name: str = "") -> str:
+    try:
+        root, target = _safe_repo_path(path, repo_name)
+        if not target.exists() or not target.is_file():
+            return f"File not found: {path}."
+        if not _is_probably_text(target):
+            return f"File is too large or not plain text: {target.relative_to(root)}."
+        text = target.read_text(encoding="utf-8", errors="replace")
+        fallback = f"{target.relative_to(root)} appears to be a text file with {len(text.splitlines())} lines."
+        return _gemini_summarize(
+            f"Explain the purpose and key behavior of {target.relative_to(root)}.",
+            text,
+            fallback,
+        )
+    except Exception as e:
+        return f"Could not explain file: {e}"
+
+
+def unread_count() -> str:
+    try:
+        import gmail_client
+        count = gmail_client.unread_count(_CFG)
+        return f"You have {count} unread email{'s' if count != 1 else ''}."
+    except Exception as e:
+        return f"Could not read Gmail unread count: {e}"
+
+
+def last_emails(n: int = 5) -> str:
+    try:
+        import gmail_client
+        items = gmail_client.last_emails(n, _CFG)
+    except Exception as e:
+        return f"Could not read recent emails: {e}"
+    if not items:
+        return "No recent emails found."
+    lines = []
+    for item in items:
+        sender = item.get("sender", "unknown sender")
+        subject = item.get("subject", "(no subject)")
+        snippet = item.get("snippet", "")
+        lines.append(f"- {sender}: {subject}. {snippet}")
+    return "Recent emails:\n" + "\n".join(lines)
+
+
+def summarize_inbox() -> str:
+    try:
+        import gmail_client
+        summary = gmail_client.summarize_inbox(_CFG)
+    except Exception as e:
+        return f"Could not summarize Gmail inbox: {e}"
+    count = summary.get("unread_count", 0)
+    recent = summary.get("recent", [])
+    lines = [f"Unread emails: {count}."]
+    if recent:
+        lines.append("Latest:")
+        for item in recent:
+            lines.append(f"- {item.get('sender', 'unknown')}: {item.get('subject', '(no subject)')}")
+    return "\n".join(lines)
+
+
+def _home_assistant_config() -> dict:
+    return _CFG.get("home_assistant", {}) or {}
+
+
+def _home_assistant_request(method: str, path: str, payload: dict | None = None) -> dict:
+    cfg = _home_assistant_config()
+    if not cfg.get("enabled", False):
+        raise RuntimeError("Home Assistant is disabled. Set home_assistant.enabled to true in config.yaml.")
+    url = (cfg.get("url") or "").rstrip("/")
+    token = cfg.get("token") or os.getenv("HOME_ASSISTANT_TOKEN")
+    if not url or not token:
+        raise RuntimeError("Home Assistant is not configured. Add home_assistant.url and token.")
+    import requests
+    response = requests.request(
+        method,
+        f"{url}{path}",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=8,
+    )
+    response.raise_for_status()
+    if not response.text:
+        return {}
+    return response.json()
+
+
+def ha_get_state(entity_id: str) -> str:
+    try:
+        data = _home_assistant_request("GET", f"/api/states/{entity_id}")
+        return f"{entity_id} is {data.get('state', 'unknown')}."
+    except Exception as e:
+        return f"Could not get Home Assistant state: {e}"
+
+
+def ha_call_service(domain: str, service: str, data: dict | None = None) -> str:
+    try:
+        payload = data if isinstance(data, dict) else {}
+        result = _home_assistant_request("POST", f"/api/services/{domain}/{service}", payload)
+        changed = len(result) if isinstance(result, list) else 0
+        return f"Called Home Assistant service {domain}.{service}" + (f" ({changed} entities changed)." if changed else ".")
+    except Exception as e:
+        return f"Could not call Home Assistant service: {e}"
+
+
 def run_git(command: str, repo_name: str = "") -> str:
     cwd = _resolve_repo_path(repo_name)
     if isinstance(cwd, str) and cwd.startswith("Error"):
@@ -829,6 +1227,19 @@ def execute_tool(name: str, inputs: dict) -> str:
         "next_event":       lambda i: next_event(),
         "list_events":      lambda i: list_events(i["start"], i["end"]),
         "create_event":     lambda i: create_event(i["title"], i["when"], int(i.get("duration_minutes", 60))),
+        "spotify_play":     lambda i: spotify_play(i["query"]),
+        "spotify_control":  lambda i: spotify_control(i["action"]),
+        "spotify_now_playing": lambda i: spotify_now_playing(),
+        "create_file":      lambda i: create_file(i["path"], i["content"], i.get("repo_name", "")),
+        "read_file":        lambda i: read_file(i["path"], i.get("repo_name", "")),
+        "search_codebase":  lambda i: search_codebase(i["query"], i.get("repo_name", "")),
+        "summarize_diff":   lambda i: summarize_diff(i.get("repo_name", "")),
+        "explain_file":     lambda i: explain_file(i["path"], i.get("repo_name", "")),
+        "unread_count":     lambda i: unread_count(),
+        "last_emails":      lambda i: last_emails(int(i.get("n", 5))),
+        "summarize_inbox":  lambda i: summarize_inbox(),
+        "ha_get_state":     lambda i: ha_get_state(i["entity_id"]),
+        "ha_call_service":  lambda i: ha_call_service(i["domain"], i["service"], i.get("data", {})),
         "run_git":          lambda i: run_git(i["command"], i.get("repo_name", "")),
         "run_terminal":     lambda i: run_terminal(i["command"], i.get("repo_name", "")),
         "describe_screen":  lambda i: describe_screen(),
