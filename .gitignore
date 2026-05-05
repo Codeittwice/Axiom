@@ -1,15 +1,87 @@
+# AXIOM local/private files
 .env
-.venv/
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.log
-*.wav
-*.mp3
 memory.json
 secrets/
 custom_models/
-dist/
-build/
+*.wav
+*.mp3
 node_modules/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
+.envrc
+.venv/
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Tooling caches
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# IDE/project noise
+.spyderproject
+.spyproject
+.ropeproject
+.idea/
+.vscode/
+tempCodeRunnerFile.py
+
+# Common app/framework local state
+instance/
+.webassets-cache
+db.sqlite3
+db.sqlite3-journal
+/site
+.streamlit/secrets.toml
