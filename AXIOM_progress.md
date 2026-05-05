@@ -325,3 +325,50 @@ Make projects, scenarios, voice settings, and conversation history manageable fr
 - [x] Conversations/history are visible from the UI
 - [ ] Drag-drop visual scenario builder - deferred; JSON scenario editor implemented first
 - [ ] Hotkey/wake-word listener rebind after config save - restart still recommended after changing activation keys
+
+---
+
+## 2026-05-05 - Phase 5: Electron Desktop App
+
+### Goal
+Wrap the existing Flask/SocketIO UI in a native Electron desktop shell without rewriting the browser UI.
+
+### Implementation log
+
+**Step 1 - Electron shell**
+- Added root `package.json` with `npm start`, `npm run build`, and `npm run build:backend`.
+- Added `electron/main.js` to spawn the Python backend, wait for `http://127.0.0.1:5000`, create a frameless `BrowserWindow`, and manage a Windows tray icon.
+- Added single-instance handling so relaunching AXIOM focuses the existing window.
+- Added backend restart-on-crash while the Electron app is running.
+
+**Step 2 - IPC and frameless controls**
+- Added `electron/preload.js` with a narrow `window.axiomWindow` API.
+- Added an Electron-only custom title bar to `voice_assistant_ui.html`.
+- The close button hides to tray; the minimize button minimizes the window.
+
+**Step 3 - Startup and shutdown behavior**
+- Electron sets Windows login startup with `--minimized`.
+- `server.py` now detects `AXIOM_ELECTRON=1` and suppresses the old browser auto-open and Python tray so Electron owns the desktop shell.
+- Quitting Electron kills the Python backend child process.
+
+**Step 4 - Packaging scaffold**
+- Added `electron/build/icon.ico` for window, tray, and installer metadata.
+- Added electron-builder Windows NSIS config.
+- Added a PyInstaller backend build script placeholder: `npm run build:backend`.
+
+### Acceptance criteria status
+
+- [x] Electron files created (`electron/main.js`, `electron/preload.js`, `electron/package.json`, `electron/build/icon.ico`)
+- [x] `npm start` script configured to launch the frameless desktop window
+- [x] System tray menu configured with Open AXIOM and Quit
+- [x] Closing the window minimizes/hides to tray
+- [x] Auto-start configured with Windows login item settings
+- [x] Quitting Electron attempts to kill the Python backend cleanly
+- [ ] `npm run build` produces installer - needs local `npm install` and PyInstaller backend artifact first
+- [ ] Clean Windows machine without Python - needs `dist/axiom_backend.exe` from PyInstaller included before final installer validation
+
+### Verification notes
+
+- Run `npm install` once to install Electron dependencies.
+- For development: `npm start`.
+- For installer prep: `npm run build:backend`, then `npm run build`.

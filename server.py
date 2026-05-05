@@ -25,7 +25,7 @@ with open("config.yaml") as _f:
     CFG = yaml.safe_load(_f)
 
 HOST = CFG["server"]["host"]
-PORT = CFG["server"]["port"]
+PORT = int(os.environ.get("AXIOM_PORT", CFG["server"]["port"]))
 
 # ─── Flask + SocketIO ─────────────────────────────────────────────────────────
 app      = Flask(__name__)
@@ -313,18 +313,20 @@ def _make_tray_icon():
 if __name__ == "__main__":
     # Import engine here (not at top) so Flask starts before Whisper loads
     print("[AXIOM] Starting…")
+    electron_mode = os.environ.get("AXIOM_ELECTRON") == "1"
 
     # Assistant runs in a background thread
     t = threading.Thread(target=assistant_loop, daemon=True)
     t.start()
 
     # Open browser after server is up
-    if CFG["server"]["open_browser"]:
+    if CFG["server"]["open_browser"] and not electron_mode:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://{HOST}:{PORT}")).start()
 
     # System tray runs in another thread (if pystray available)
-    tray_thread = threading.Thread(target=_make_tray_icon, daemon=True)
-    tray_thread.start()
+    if not electron_mode:
+        tray_thread = threading.Thread(target=_make_tray_icon, daemon=True)
+        tray_thread.start()
 
     print(f"[AXIOM] UI at http://{HOST}:{PORT}")
     socketio.run(app, host=HOST, port=PORT, debug=False, use_reloader=False)

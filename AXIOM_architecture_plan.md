@@ -203,6 +203,6 @@ Personal Voice Assistant/
 ## Decision
 > Fill this in when ready to proceed:
 
-- [ ] Chosen option: ___________
+- [x] Chosen option: Electron
 - [ ] Node.js installed
 - [ ] Ready to build

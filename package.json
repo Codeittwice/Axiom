@@ -1,0 +1,49 @@
+{
+  "name": "axiom",
+  "version": "1.0.0",
+  "description": "AXIOM local Windows voice assistant desktop shell.",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:backend": "pyinstaller --onefile --noconsole server.py --name axiom_backend --add-data \"config.yaml;.\" --add-data \"voice_assistant_ui.html;.\""
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.axiom.assistant",
+    "productName": "AXIOM",
+    "files": [
+      "electron/**/*",
+      "voice_assistant_ui.html",
+      "server.py",
+      "voice_assistant.py",
+      "tools.py",
+      "scenarios.py",
+      "projects.py",
+      "config.yaml",
+      "requirements.txt",
+      "run.pyw"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/axiom_backend.exe",
+        "to": "axiom_backend.exe",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

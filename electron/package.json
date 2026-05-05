@@ -1,0 +1,5 @@
+{
+  "name": "axiom-electron",
+  "private": true,
+  "description": "Electron main-process files for AXIOM. Root package.json owns install, start, and build scripts."
+}

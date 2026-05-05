@@ -12,6 +12,8 @@ Budget: **free tier only** — no paid APIs beyond Anthropic Claude.
 
 ## Architecture Overview
 
+Phase 5 adds an Electron desktop shell. Electron starts `server.py`, waits for the Flask/SocketIO backend, opens the existing HTML UI in a frameless native window, and owns the tray/startup lifecycle.
+
 ```
 run.pyw  (no-console launcher, system tray)
   └── server.py  (Flask + SocketIO — single entry point)
@@ -29,6 +31,7 @@ Config:
 ```bash
 python server.py        # with console (recommended while developing)
 pythonw run.pyw         # silent, system tray only
+npm start               # Electron desktop shell (Phase 5)
 ```
 Then open http://127.0.0.1:5000 (auto-opens on start).
 
@@ -50,6 +53,7 @@ Then open http://127.0.0.1:5000 (auto-opens on start).
 | Tool: apps | subprocess | Free | Windows shell |
 | UI bridge | Flask + flask-socketio | Free | WebSocket real-time state |
 | System tray | pystray + Pillow | Free | Optional, `run.pyw` |
+| Desktop shell | Electron | Free | Phase 5 native window + tray |
 
 ---
 
@@ -64,7 +68,9 @@ Then open http://127.0.0.1:5000 (auto-opens on start).
 | `voice_assistant.py` | ✅ Done | Core engine (rewritten) |
 | `tools.py` | ✅ Done | Tool use implementations |
 | `server.py` | ✅ Done | Flask + SocketIO entry point |
-| `voice_assistant_ui.html` | ✅ Phase 4 | Browser UI with live WebSocket + config tabs |
+| `voice_assistant_ui.html` | ✅ Phase 5 | Browser UI with live WebSocket, config tabs, and Electron title bar |
+| `package.json` | ✅ Phase 5 | Electron scripts + electron-builder config |
+| `electron/` | ✅ Phase 5 | Main process, preload bridge, tray/window icon |
 | `run.pyw` | ✅ Done | No-console system tray launcher |
 | `scenarios.py` | ✅ Phase 1 | ScenarioEngine — multi-step workflows |
 | `projects.py` | ✅ Phase 2 | ProjectRegistry — fuzzy voice resolution + status |
