@@ -465,3 +465,14 @@ Implement the original Phase 6 advanced-tools track after the newer Calendar/aca
 - [x] Tools degrade gracefully when not configured
 - [x] Unit tests added for the local/fallback portions
 - [ ] Live Spotify/Gmail/Home Assistant OAuth/API flows not exercised - requires user credentials/devices
+
+---
+
+## 2026-05-05 - UI Polish + Hotkey Update
+
+### Implementation log
+
+- Tuned Live side widgets to use the page background color with the existing border.
+- Aligned side widgets with the main listening panel instead of the top header area.
+- Increased widget height so each side column spans roughly the main listening panel.
+- Changed the default hotkey from `space` to `ctrl+alt+space`.

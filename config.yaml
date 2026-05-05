@@ -1,6 +1,6 @@
 assistant:
   name: Axiom
-  hotkey: space # key to press to start recording
+  hotkey: ctrl+alt+space # key combo to start recording
   personality:
     tone: casual # professional | casual | snarky
     verbosity: concise # concise | normal | verbose
@@ -38,7 +38,7 @@ server:
   open_browser: true # auto-open UI on startup
 
 wake_word:
-  enabled: true # listens continuously alongside the SPACE hotkey
+  enabled: true # listens continuously alongside the configured hotkey
   model: hey_jarvis # closest built-in model to "Hey Axiom"; for true "Hey Axiom" train at github.com/dscripka/openWakeWord
   model_path: "" # custom .onnx path overrides model
   threshold: 0.5 # raise if false positives happen
@@ -88,11 +88,11 @@ websites:
 # Say "open my email" or "open github" and AXIOM launches the URL.
 # Obsidian vault integration
 obsidian:
-  vault_path: ""           # REQUIRED: e.g. C:/Users/hmgad/Documents/ObsidianVault
-  daily_notes_folder: ""   # Optional subfolder for daily notes (e.g. "Daily Notes")
+  vault_path: "" # REQUIRED: e.g. C:/Users/hmgad/Documents/ObsidianVault
+  daily_notes_folder: "" # Optional subfolder for daily notes (e.g. "Daily Notes")
 
 google:
-  enable_calendar: false   # Set true after adding secrets/google_oauth_client.json
+  enable_calendar: true # Set true after adding secrets/google_oauth_client.json
   oauth_credentials_file: "secrets/google_oauth_client.json"
   token_file: "secrets/google_token.json"
   calendar_id: "primary"
@@ -112,8 +112,8 @@ gmail:
 
 home_assistant:
   enabled: false
-  url: ""                  # e.g. http://homeassistant.local:8123
-  token: ""                # Prefer HOME_ASSISTANT_TOKEN in .env for real use
+  url: "" # e.g. http://homeassistant.local:8123
+  token: "" # Prefer HOME_ASSISTANT_TOKEN in .env for real use
 
 scenarios:
   # Existing simple scenarios — migrated to new step format

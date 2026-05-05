@@ -285,7 +285,7 @@ def _speak_preview(text: str) -> None:
 @socketio.on("connect")
 def on_connect():
     emit("state", {"state": "idle"})
-    emit("log",   {"level": "system", "text": "AXIOM online — press SPACE to speak."})
+    emit("log",   {"level": "system", "text": f"AXIOM online - press {CFG['assistant']['hotkey'].upper()} to speak."})
 
 
 # ─── Assistant loop ───────────────────────────────────────────────────────────
