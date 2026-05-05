@@ -219,6 +219,26 @@ def _slow_tool_acknowledgement(tool_name: str) -> None:
     speak(random.choice(["Got it.", "On it.", "One moment."]))
 
 
+def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
+    """
+    Deterministic routing for high-friction local-control requests.
+    This keeps Gemini from guessing about local config when the repo has tools.
+    """
+    text = user_text.lower()
+    has_calendar = "calendar" in text or "schedule" in text or "meeting" in text or "event" in text
+    config_words = ("config", "setting", "enabled", "disabled", "true", "false", "check")
+
+    if has_calendar and any(word in text for word in config_words):
+        return "calendar_status", {}
+    if "schedule" in text and ("today" in text or "what" in text or "what's" in text):
+        return "today_schedule", {}
+    if "calendar" in text and "today" in text:
+        return "today_schedule", {}
+    if ("next" in text or "upcoming" in text) and ("meeting" in text or "event" in text or "calendar" in text):
+        return "next_event", {}
+    return None
+
+
 def ask_ai(user_text: str, history: list) -> tuple[str, list]:
     """
     Send a message to Gemini, handle tool use, return (reply_text, updated_history).
@@ -227,6 +247,21 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
     text exchange is saved, keeping memory.json clean and portable.
     """
     from tools import GEMINI_TOOLS, execute_tool
+
+    direct_tool = _direct_tool_for_text(user_text)
+    if direct_tool:
+        name, args = direct_tool
+        print(f"[AXIOM] Direct tool: {name}({args})")
+        _send("tool", {"name": name, "input": args})
+        _send("state", {"state": "tool"})
+        reply = execute_tool(name, args)
+        print(f"[AXIOM] {ASSISTANT_NAME}: {reply}")
+        updated_history = history + [
+            {"role": "user", "text": user_text},
+            {"role": "model", "text": reply},
+        ]
+        _send("state", {"state": "idle"})
+        return reply, _maybe_summarize_history(updated_history)
 
     # Convert stored text history to Gemini's content format
     gemini_history = [

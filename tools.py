@@ -233,6 +233,11 @@ GEMINI_TOOLS = [{
                 "required": ["title", "when"]
             }
         },
+        {
+            "name": "calendar_status",
+            "description": "Check AXIOM's local Google Calendar configuration without opening OAuth. Use when the user asks whether calendar is enabled or says config.yaml is true/false.",
+            "parameters": {"type": "object", "properties": {}}
+        },
 
         # Spotify (Phase 6 old advanced tools)
         {
@@ -782,6 +787,27 @@ def create_event(title: str, when: str, duration_minutes: int = 60) -> str:
     return f"Created calendar event: {_event_line(event)}."
 
 
+def calendar_status() -> str:
+    try:
+        config = _refresh_config_from_disk()
+        google = config.get("google", {}) or {}
+        enabled = bool(google.get("enable_calendar", False))
+        credentials = Path(google.get("oauth_credentials_file") or "secrets/google_oauth_client.json")
+        token = Path(google.get("token_file") or "secrets/google_token.json")
+        parts = [
+            f"google.enable_calendar is {'true' if enabled else 'false'} in config.yaml",
+            f"OAuth client file {'exists' if credentials.exists() else 'is missing'} at {credentials}",
+            f"token file {'exists' if token.exists() else 'does not exist yet'} at {token}",
+            f"calendar_id is {google.get('calendar_id') or 'primary'}",
+            f"timezone is {google.get('timezone') or 'not set'}",
+        ]
+        if enabled and not token.exists():
+            parts.append("Calendar is enabled, but Google has not been connected successfully yet.")
+        return ". ".join(parts) + "."
+    except Exception as e:
+        return f"Could not check calendar config: {e}"
+
+
 def spotify_play(query: str) -> str:
     try:
         import spotify_client
@@ -1237,6 +1263,7 @@ def execute_tool(name: str, inputs: dict) -> str:
         "next_event":       lambda i: next_event(),
         "list_events":      lambda i: list_events(i["start"], i["end"]),
         "create_event":     lambda i: create_event(i["title"], i["when"], int(i.get("duration_minutes", 60))),
+        "calendar_status":  lambda i: calendar_status(),
         "spotify_play":     lambda i: spotify_play(i["query"]),
         "spotify_control":  lambda i: spotify_control(i["action"]),
         "spotify_now_playing": lambda i: spotify_now_playing(),
