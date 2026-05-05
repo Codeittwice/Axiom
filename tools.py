@@ -21,12 +21,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ─── Load config (tools need repos, websites, obsidian paths) ─────────────────
-with open("config.yaml") as _f:
-    _CFG = yaml.safe_load(_f)
+def _read_config_file() -> dict:
+    with open("config.yaml", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
-_REPOS    = _CFG.get("repos",    {})
-_WEBSITES = _CFG.get("websites", {})
-_OBSIDIAN = _CFG.get("obsidian", {})
+
+def _sync_config(config: dict) -> None:
+    global _CFG, _REPOS, _WEBSITES, _OBSIDIAN
+    _CFG = config
+    _REPOS    = _CFG.get("repos",    {})
+    _WEBSITES = _CFG.get("websites", {})
+    _OBSIDIAN = _CFG.get("obsidian", {})
+
+
+def _refresh_config_from_disk() -> dict:
+    _sync_config(_read_config_file())
+    return _CFG
+
+
+_sync_config(_read_config_file())
 
 # ── Scenario engine handle (set by voice_assistant.init_scenario_engine) ──
 _scenario_engine = None
@@ -48,11 +61,7 @@ def set_project_registry(registry) -> None:
 
 def reload_config(config: dict) -> None:
     """Hot-reload cached config sections after the settings UI saves YAML."""
-    global _CFG, _REPOS, _WEBSITES, _OBSIDIAN
-    _CFG = config
-    _REPOS    = _CFG.get("repos",    {})
-    _WEBSITES = _CFG.get("websites", {})
-    _OBSIDIAN = _CFG.get("obsidian", {})
+    _sync_config(config)
 
 # ─── Gemini tool declarations ─────────────────────────────────────────────────
 
@@ -686,7 +695,8 @@ def switch_project(project_name: str) -> str:
 
 
 def _calendar_enabled() -> bool:
-    return bool((_CFG.get("google", {}) or {}).get("enable_calendar", False))
+    config = _refresh_config_from_disk()
+    return bool((config.get("google", {}) or {}).get("enable_calendar", False))
 
 
 def _event_time_label(value: str) -> str:
