@@ -96,9 +96,9 @@ function waitForServer(timeoutMs = 30000) {
 
 function createWindow(startMinimized = false) {
   mainWindow = new BrowserWindow({
-    width: 900,
+    width: 1240,
     height: 1040,
-    minWidth: 760,
+    minWidth: 960,
     minHeight: 760,
     show: !startMinimized,
     frame: false,
