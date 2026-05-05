@@ -286,3 +286,42 @@ Reduce perceived response latency and make AXIOM easier to interrupt during spok
 - [x] Interrupt-while-speaking works for Edge TTS playback
 - [x] Streaming TTS groundwork added via sentence-chunked playback
 - [ ] Full Gemini token streaming to TTS - not started
+
+---
+
+## 2026-05-05 - Phase 4: Settings UI & Config Editor
+
+### Goal
+Make projects, scenarios, voice settings, and conversation history manageable from the browser UI instead of hand-editing `config.yaml`.
+
+### Implementation log
+
+**Step 1 - Backend API**
+- Added `GET/POST /api/config`.
+- Added `GET/POST /api/projects`.
+- Added `GET/POST /api/scenarios`.
+- Added `POST /api/scenarios/run/<name>`.
+- Added `GET /api/conversations`.
+- Added `POST /api/test-voice`.
+
+**Step 2 - Config persistence and hot reload**
+- Added `ruamel.yaml` to requirements for comment-preserving config saves.
+- `server.py` uses ruamel when available and falls back to PyYAML.
+- Added `voice_assistant.reload_runtime_config()` to refresh mutable runtime config, tools, project registry, and scenario engine after saves.
+- Added `tools.reload_config()` so tools use updated repos, websites, and Obsidian settings.
+
+**Step 3 - Browser UI tabs**
+- Added tab navigation for Live, Projects, Scenarios, Settings, and History.
+- Projects tab lists, edits, saves, and deletes project records.
+- Scenarios tab lists scenarios, edits JSON definitions, saves/deletes, and manually runs a selected scenario.
+- Settings tab edits core voice/model/wake-word settings, saves full JSON config, and previews TTS.
+- History tab reads `memory.json` through the new conversations API.
+
+### Acceptance criteria status
+
+- [x] New UI tabs render and are functional
+- [x] Config save triggers runtime reload without restarting the Flask server
+- [x] Voice preview calls the active TTS engine
+- [x] Conversations/history are visible from the UI
+- [ ] Drag-drop visual scenario builder - deferred; JSON scenario editor implemented first
+- [ ] Hotkey/wake-word listener rebind after config save - restart still recommended after changing activation keys

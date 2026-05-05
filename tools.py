@@ -40,6 +40,15 @@ def set_project_registry(registry) -> None:
     global _project_registry
     _project_registry = registry
 
+
+def reload_config(config: dict) -> None:
+    """Hot-reload cached config sections after the settings UI saves YAML."""
+    global _CFG, _REPOS, _WEBSITES, _OBSIDIAN
+    _CFG = config
+    _REPOS    = _CFG.get("repos",    {})
+    _WEBSITES = _CFG.get("websites", {})
+    _OBSIDIAN = _CFG.get("obsidian", {})
+
 # ─── Gemini tool declarations ─────────────────────────────────────────────────
 
 GEMINI_TOOLS = [{

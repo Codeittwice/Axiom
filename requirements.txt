@@ -23,6 +23,7 @@ keyboard
 # Config & env
 python-dotenv
 pyyaml
+ruamel.yaml
 
 # Web server + real-time UI bridge
 flask

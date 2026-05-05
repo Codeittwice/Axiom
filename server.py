@@ -13,10 +13,11 @@ import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 
 import keyboard
 import yaml
-from flask import Flask, send_file
+from flask import Flask, jsonify, request, send_file
 from flask_socketio import SocketIO
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -30,15 +31,152 @@ PORT = CFG["server"]["port"]
 app      = Flask(__name__)
 app.config["SECRET_KEY"] = "axiom-local-secret"
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+_config_lock = threading.Lock()
 
 
 def emit(event: str, data: dict):
     socketio.emit(event, data)
 
 
+def _load_config_file() -> dict:
+    with open("config.yaml", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def _save_config_file(config: dict) -> None:
+    """
+    Preserve YAML comments/shape when ruamel.yaml is installed. Fall back to
+    PyYAML so the UI still works in minimal environments.
+    """
+    try:
+        from ruamel.yaml import YAML
+        yaml_rt = YAML()
+        yaml_rt.preserve_quotes = True
+        with open("config.yaml", encoding="utf-8") as f:
+            doc = yaml_rt.load(f)
+        _deep_update(doc, config)
+        with open("config.yaml", "w", encoding="utf-8") as f:
+            yaml_rt.dump(doc, f)
+    except Exception:
+        with open("config.yaml", "w", encoding="utf-8") as f:
+            yaml.safe_dump(config, f, sort_keys=False, allow_unicode=True)
+
+
+def _deep_update(target, source):
+    if not isinstance(target, dict) or not isinstance(source, dict):
+        return source
+    stale = [k for k in target.keys() if k not in source]
+    for key in stale:
+        del target[key]
+    for key, value in source.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value
+    return target
+
+
+def _apply_config(config: dict) -> None:
+    global CFG
+    with _config_lock:
+        _save_config_file(config)
+        CFG = config
+        try:
+            from voice_assistant import reload_runtime_config
+            reload_runtime_config(config)
+        except Exception as e:
+            emit("log", {"level": "warn", "text": f"Config saved; runtime reload failed: {e}"})
+    emit("config_reloaded", {})
+
+
+def _conversation_history() -> list:
+    path = Path(CFG.get("memory", {}).get("file", "memory.json"))
+    if not path.exists():
+        return []
+    try:
+        import json
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
 @app.route("/")
 def index():
     return send_file("voice_assistant_ui.html")
+
+
+@app.route("/api/config", methods=["GET"])
+def api_get_config():
+    return jsonify(_load_config_file())
+
+
+@app.route("/api/config", methods=["POST"])
+def api_save_config():
+    config = request.get_json(force=True)
+    if not isinstance(config, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    _apply_config(config)
+    return jsonify({"ok": True, "config": config})
+
+
+@app.route("/api/projects", methods=["GET", "POST"])
+def api_projects():
+    config = _load_config_file()
+    if request.method == "GET":
+        return jsonify(config.get("projects", {}) or {})
+    projects = request.get_json(force=True)
+    if not isinstance(projects, dict):
+        return jsonify({"error": "Expected projects object"}), 400
+    config["projects"] = projects
+    _apply_config(config)
+    return jsonify({"ok": True, "projects": projects})
+
+
+@app.route("/api/scenarios", methods=["GET", "POST"])
+def api_scenarios():
+    config = _load_config_file()
+    if request.method == "GET":
+        return jsonify(config.get("scenarios", {}) or {})
+    scenarios = request.get_json(force=True)
+    if not isinstance(scenarios, dict):
+        return jsonify({"error": "Expected scenarios object"}), 400
+    config["scenarios"] = scenarios
+    _apply_config(config)
+    return jsonify({"ok": True, "scenarios": scenarios})
+
+
+@app.route("/api/scenarios/run/<name>", methods=["POST"])
+def api_run_scenario(name: str):
+    payload = request.get_json(silent=True) or {}
+    from tools import run_scenario
+    result = run_scenario(name, payload.get("project_name", ""))
+    return jsonify({"ok": True, "result": result})
+
+
+@app.route("/api/conversations", methods=["GET"])
+def api_conversations():
+    limit = int(request.args.get("limit", 100))
+    history = _conversation_history()
+    return jsonify({"items": history[-limit:], "total": len(history)})
+
+
+@app.route("/api/test-voice", methods=["POST"])
+def api_test_voice():
+    payload = request.get_json(force=True)
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        return jsonify({"error": "Text is required"}), 400
+    threading.Thread(target=lambda: _speak_preview(text), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+def _speak_preview(text: str) -> None:
+    try:
+        from voice_assistant import speak
+        speak(text)
+    except Exception as e:
+        emit("error", {"message": f"Voice preview failed: {e}"})
 
 
 @socketio.on("connect")

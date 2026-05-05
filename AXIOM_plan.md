@@ -64,7 +64,7 @@ Then open http://127.0.0.1:5000 (auto-opens on start).
 | `voice_assistant.py` | ✅ Done | Core engine (rewritten) |
 | `tools.py` | ✅ Done | Tool use implementations |
 | `server.py` | ✅ Done | Flask + SocketIO entry point |
-| `voice_assistant_ui.html` | ✅ Done | Browser UI with live WebSocket |
+| `voice_assistant_ui.html` | ✅ Phase 4 | Browser UI with live WebSocket + config tabs |
 | `run.pyw` | ✅ Done | No-console system tray launcher |
 | `scenarios.py` | ✅ Phase 1 | ScenarioEngine — multi-step workflows |
 | `projects.py` | ✅ Phase 2 | ProjectRegistry — fuzzy voice resolution + status |

@@ -437,6 +437,34 @@ def init_scenario_engine():
     return _scenario_engine
 
 
+def reload_runtime_config(new_config: dict):
+    """
+    Hot-reload mutable runtime config for settings UI saves.
+    This avoids reloading Whisper, but refreshes tool config, projects, scenarios,
+    voice settings, memory settings, and Gemini model selection.
+    """
+    global CFG, ASSISTANT_NAME, SAMPLE_RATE, MAX_RECORD_SECS, VAD_THRESHOLD
+    global VAD_SILENCE_SECS, MEMORY_FILE, MAX_HISTORY, AUTO_SUMMARIZE_AFTER
+    global TTS_ENGINE
+
+    CFG = new_config
+    ASSISTANT_NAME = CFG["assistant"]["name"]
+    SAMPLE_RATE = CFG["audio"]["sample_rate"]
+    MAX_RECORD_SECS = CFG["audio"]["max_record_seconds"]
+    VAD_THRESHOLD = CFG["audio"]["vad_energy_threshold"]
+    VAD_SILENCE_SECS = CFG["audio"]["vad_silence_duration"]
+    MEMORY_FILE = Path(CFG["memory"]["file"])
+    MAX_HISTORY = CFG["memory"]["max_history"]
+    AUTO_SUMMARIZE_AFTER = CFG.get("memory", {}).get("auto_summarize_after", 20)
+    TTS_ENGINE = CFG["tts"]["engine"]
+
+    from tools import reload_config as reload_tools_config
+    reload_tools_config(CFG)
+    init_scenario_engine()
+    _send("config_reloaded", {})
+    _send("log", {"level": "system", "text": "Configuration reloaded."})
+
+
 # ─── Optional: openwakeword background listener ───────────────────────────────
 # (Only activated when wake_word.enabled = true in config.yaml)
 
