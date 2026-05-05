@@ -13,6 +13,7 @@ let pythonProc = null;
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let quickCrashCount = 0;
 
 function iconImage() {
   const image = nativeImage.createFromPath(ICON_PATH);
@@ -35,6 +36,7 @@ function backendCommand() {
 function startPython() {
   if (pythonProc) return;
 
+  const startedAt = Date.now();
   const backend = backendCommand();
   pythonProc = spawn(backend.command, backend.args, {
     cwd: backend.cwd,
@@ -53,6 +55,11 @@ function startPython() {
     console.log(`[axiom-backend] exited code=${code} signal=${signal}`);
     pythonProc = null;
     if (!isQuitting) {
+      quickCrashCount = Date.now() - startedAt < 5000 ? quickCrashCount + 1 : 0;
+      if (quickCrashCount >= 5) {
+        console.error('[axiom-backend] stopped after 5 quick crashes. Fix the backend error and restart AXIOM.');
+        return;
+      }
       setTimeout(startPython, 1500);
     }
   });

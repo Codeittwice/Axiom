@@ -329,4 +329,11 @@ if __name__ == "__main__":
         tray_thread.start()
 
     print(f"[AXIOM] UI at http://{HOST}:{PORT}")
-    socketio.run(app, host=HOST, port=PORT, debug=False, use_reloader=False)
+    socketio.run(
+        app,
+        host=HOST,
+        port=PORT,
+        debug=False,
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,
+    )
