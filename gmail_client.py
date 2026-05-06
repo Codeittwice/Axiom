@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
+from email.utils import parseaddr, parsedate_to_datetime
 from pathlib import Path
 
 import yaml
@@ -96,6 +96,16 @@ def _header(payload: dict, name: str) -> str:
     return ""
 
 
+def sender_label(value: str) -> str:
+    """Return a speakable sender name without email addresses."""
+    name, address = parseaddr(value or "")
+    label = (name or "").strip().strip('"')
+    if not label and address:
+        label = address.split("@", 1)[0]
+    label = label.replace("_", " ").replace(".", " ").replace("-", " ")
+    return " ".join(label.split()) or "unknown sender"
+
+
 def _format_message(service, msg_id: str) -> dict:
     msg = service.users().messages().get(
         userId="me",
@@ -109,9 +119,11 @@ def _format_message(service, msg_id: str) -> dict:
         ts = parsedate_to_datetime(date_value).isoformat() if date_value else ""
     except Exception:
         ts = date_value
+    raw_sender = _header(payload, "From")
     return {
         "id": msg.get("id", ""),
-        "sender": _header(payload, "From"),
+        "sender": sender_label(raw_sender),
+        "sender_raw": raw_sender,
         "subject": _header(payload, "Subject") or "(no subject)",
         "snippet": (msg.get("snippet", "") or "")[:80],
         "ts": ts,

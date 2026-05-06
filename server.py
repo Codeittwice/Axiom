@@ -329,10 +329,9 @@ def _dashboard_email() -> dict:
         scopes = gmail.get("scopes") or gmail_client.GMAIL_SCOPES
         if not token_has_scopes(scopes, CFG):
             return {"unread_count": None, "error": "Gmail not connected"}
-        summary = gmail_client.summarize_inbox(CFG)
         return {
-            "unread_count": summary.get("unread_count"),
-            "recent": summary.get("recent", []),
+            "unread_count": gmail_client.unread_count(CFG),
+            "recent": gmail_client.last_emails(4, CFG),
         }
     except Exception as e:
         return {"unread_count": None, "error": str(e)}

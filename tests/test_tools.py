@@ -5,18 +5,24 @@ from pathlib import Path
 from unittest.mock import patch
 
 import tools
+import gmail_client
 
 
 class Phase6AdvancedToolsTest(unittest.TestCase):
     def test_disabled_integrations_degrade_gracefully(self):
         disabled_cfg = copy.deepcopy(tools._CFG)
         disabled_cfg.setdefault("gmail", {})["enabled"] = False
-        self.assertIn("Spotify", tools.spotify_now_playing())
-        with patch.object(tools, "_refresh_config_from_disk", return_value=disabled_cfg):
+        disabled_cfg.setdefault("spotify", {})["enabled"] = False
+        disabled_cfg.setdefault("home_assistant", {})["enabled"] = False
+        with (
+            patch.object(tools, "_CFG", disabled_cfg),
+            patch.object(tools, "_refresh_config_from_disk", return_value=disabled_cfg),
+        ):
+            self.assertIn("Spotify", tools.spotify_now_playing())
             self.assertIn("Gmail", tools.unread_count())
             self.assertIn("Gmail", tools.new_emails())
             self.assertIn("gmail.enabled is false", tools.gmail_status())
-        self.assertIn("Home Assistant", tools.ha_get_state("light.office"))
+            self.assertIn("Home Assistant", tools.ha_get_state("light.office"))
 
     def test_gmail_requires_explicit_connection(self):
         enabled_cfg = copy.deepcopy(tools._CFG)
@@ -26,6 +32,10 @@ class Phase6AdvancedToolsTest(unittest.TestCase):
             patch("gmail_client.has_connection", return_value=False),
         ):
             self.assertIn("Say 'connect Gmail'", tools.new_emails())
+
+    def test_gmail_sender_labels_are_speakable(self):
+        self.assertEqual(gmail_client.sender_label("Uber Eats <uber@uber.com>"), "Uber Eats")
+        self.assertEqual(gmail_client.sender_label("team@email.remarkable.com"), "team")
 
     def test_code_intelligence_file_roundtrip(self):
         original_repos = tools._REPOS
