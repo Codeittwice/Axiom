@@ -95,6 +95,7 @@ google:
   enable_calendar: true # Set true after adding secrets/google_oauth_client.json
   oauth_credentials_file: "secrets/google_oauth_client.json"
   token_file: "secrets/google_token.json"
+  oauth_timeout_seconds: 180
   calendar_id: "primary"
   timezone: "Europe/Berlin"
 

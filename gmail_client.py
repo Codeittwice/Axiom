@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from google_auth import get_service
+from google_auth import get_service, token_has_scopes
 
 
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -70,6 +70,23 @@ def _service(config: dict | None = None):
         raise RuntimeError("Gmail is disabled. Set gmail.enabled to true in config.yaml.")
     scopes = cfg.get("scopes") or GMAIL_SCOPES
     return get_service("gmail", "v1", scopes, _cfg(config))
+
+
+def has_connection(config: dict | None = None) -> bool:
+    cfg = _gmail(config)
+    if not cfg.get("enabled", False):
+        return False
+    scopes = cfg.get("scopes") or GMAIL_SCOPES
+    return token_has_scopes(scopes, _cfg(config))
+
+
+def connect(config: dict | None = None) -> dict:
+    service = _service(config)
+    profile = service.users().getProfile(userId="me").execute()
+    return {
+        "email": profile.get("emailAddress", ""),
+        "messages_total": int(profile.get("messagesTotal") or 0),
+    }
 
 
 def _header(payload: dict, name: str) -> str:

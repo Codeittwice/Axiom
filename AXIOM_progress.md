@@ -501,6 +501,12 @@ Finish the email slice without expanding permissions beyond read-only Gmail meta
 - Added a Gmail status tool for config/OAuth diagnostics.
 - Enabled the Gmail config block and added state-file/use-summary settings.
 
+### Follow-up fix
+
+- Gmail read tools now preflight `gmail.readonly` before calling the API, so "check my email" returns a clear connect-Gmail message instead of blocking in OAuth.
+- Added explicit `connect_gmail` voice tool and `POST /api/email/connect` endpoint for the consent flow.
+- Added `google.oauth_timeout_seconds` so OAuth waits fail with a useful message instead of hanging indefinitely.
+
 ### Queued todo
 
 - [ ] Phase 6c: Obsidian vault todos implementation.

@@ -191,9 +191,35 @@ def api_calendar_upcoming():
         return jsonify({"events": [], "error": str(e)})
 
 
+def _email_connection_error() -> str:
+    gmail = CFG.get("gmail", {}) or {}
+    if not gmail.get("enabled", False):
+        return "Gmail disabled"
+    try:
+        import gmail_client
+        if gmail_client.has_connection(CFG):
+            return ""
+    except Exception as e:
+        return str(e)
+    return "Gmail not connected"
+
+
+@app.route("/api/email/connect", methods=["POST"])
+def api_email_connect():
+    try:
+        import gmail_client
+        profile = gmail_client.connect(CFG)
+        return jsonify({"ok": True, **profile})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/api/email/unread", methods=["GET"])
 def api_email_unread():
     try:
+        error = _email_connection_error()
+        if error:
+            return jsonify({"count": 0, "items": [], "error": error})
         import gmail_client
         return jsonify(gmail_client.unread_since_last_check(CFG))
     except Exception as e:
@@ -203,6 +229,9 @@ def api_email_unread():
 @app.route("/api/email/recent", methods=["GET"])
 def api_email_recent():
     try:
+        error = _email_connection_error()
+        if error:
+            return jsonify({"items": [], "error": error})
         n = int(request.args.get("n", 10))
         import gmail_client
         return jsonify({"items": gmail_client.last_emails(n, CFG)})
@@ -213,6 +242,9 @@ def api_email_recent():
 @app.route("/api/email/summary", methods=["GET"])
 def api_email_summary():
     try:
+        error = _email_connection_error()
+        if error:
+            return jsonify({"unread_count": None, "recent": [], "error": error})
         import gmail_client
         return jsonify(gmail_client.summarize_inbox(CFG))
     except Exception as e:

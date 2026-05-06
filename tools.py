@@ -365,6 +365,11 @@ GEMINI_TOOLS = [{
             "description": "Check Gmail config, OAuth client file, token file, and whether the token grants gmail.readonly.",
             "parameters": {"type": "object", "properties": {}}
         },
+        {
+            "name": "connect_gmail",
+            "description": "Open the Google OAuth consent flow for Gmail read-only access. Use only when the user explicitly asks to connect Gmail.",
+            "parameters": {"type": "object", "properties": {}}
+        },
 
         # Smart home (Phase 6 old advanced tools)
         {
@@ -995,7 +1000,11 @@ def explain_file(path: str, repo_name: str = "") -> str:
 def unread_count() -> str:
     try:
         import gmail_client
-        count = gmail_client.unread_count(_refresh_config_from_disk())
+        config = _refresh_config_from_disk()
+        blocked = _gmail_connection_message(config)
+        if blocked:
+            return blocked
+        count = gmail_client.unread_count(config)
         return f"You have {count} unread email{'s' if count != 1 else ''}."
     except Exception as e:
         return f"Could not read Gmail unread count: {e}"
@@ -1004,7 +1013,11 @@ def unread_count() -> str:
 def last_emails(n: int = 5) -> str:
     try:
         import gmail_client
-        items = gmail_client.last_emails(n, _refresh_config_from_disk())
+        config = _refresh_config_from_disk()
+        blocked = _gmail_connection_message(config)
+        if blocked:
+            return blocked
+        items = gmail_client.last_emails(n, config)
     except Exception as e:
         return f"Could not read recent emails: {e}"
     if not items:
@@ -1021,7 +1034,11 @@ def last_emails(n: int = 5) -> str:
 def summarize_inbox() -> str:
     try:
         import gmail_client
-        summary = gmail_client.summarize_inbox(_refresh_config_from_disk())
+        config = _refresh_config_from_disk()
+        blocked = _gmail_connection_message(config)
+        if blocked:
+            return blocked
+        summary = gmail_client.summarize_inbox(config)
     except Exception as e:
         return f"Could not summarize Gmail inbox: {e}"
     count = summary.get("unread_count", 0)
@@ -1037,7 +1054,11 @@ def summarize_inbox() -> str:
 def new_emails() -> str:
     try:
         import gmail_client
-        result = gmail_client.unread_since_last_check(_refresh_config_from_disk())
+        config = _refresh_config_from_disk()
+        blocked = _gmail_connection_message(config)
+        if blocked:
+            return blocked
+        result = gmail_client.unread_since_last_check(config)
     except Exception as e:
         return f"Could not check new Gmail messages: {e}"
     items = result.get("items", [])
@@ -1058,6 +1079,22 @@ def mark_email_check() -> str:
         return "Email check timestamp updated."
     except Exception as e:
         return f"Could not update email check timestamp: {e}"
+
+
+def _gmail_connection_message(config: dict) -> str:
+    gmail = config.get("gmail", {}) or {}
+    if not gmail.get("enabled", False):
+        return "Gmail is disabled. Set gmail.enabled to true in config.yaml."
+    try:
+        import gmail_client
+        if gmail_client.has_connection(config):
+            return ""
+    except Exception as e:
+        return f"Could not check Gmail connection: {e}"
+    return (
+        "Gmail is enabled, but Google has not granted Gmail read-only consent yet. "
+        "Say 'connect Gmail' once, finish the Google browser consent, then ask me to check email again."
+    )
 
 
 def gmail_status() -> str:
@@ -1088,6 +1125,21 @@ def gmail_status() -> str:
         return ". ".join(parts) + "."
     except Exception as e:
         return f"Could not check Gmail config: {e}"
+
+
+def connect_gmail() -> str:
+    try:
+        import gmail_client
+        config = _refresh_config_from_disk()
+        if not (config.get("gmail", {}) or {}).get("enabled", False):
+            return "Gmail is disabled. Set gmail.enabled to true in config.yaml first."
+        profile = gmail_client.connect(config)
+        email = profile.get("email")
+        if email:
+            return f"Gmail connected for {email}. You can ask me to check email now."
+        return "Gmail connected. You can ask me to check email now."
+    except Exception as e:
+        return f"Could not connect Gmail: {e}"
 
 
 def _home_assistant_config() -> dict:
@@ -1349,6 +1401,7 @@ def execute_tool(name: str, inputs: dict) -> str:
         "new_emails":       lambda i: new_emails(),
         "mark_email_check": lambda i: mark_email_check(),
         "gmail_status":     lambda i: gmail_status(),
+        "connect_gmail":    lambda i: connect_gmail(),
         "ha_get_state":     lambda i: ha_get_state(i["entity_id"]),
         "ha_call_service":  lambda i: ha_call_service(i["domain"], i["service"], i.get("data", {})),
         "run_git":          lambda i: run_git(i["command"], i.get("repo_name", "")),

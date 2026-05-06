@@ -233,6 +233,8 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
 
     if has_calendar and any(word in text for word in config_words):
         return "calendar_status", {}
+    if has_email and ("connect" in text or "authorize" in text or "authorise" in text or "consent" in text):
+        return "connect_gmail", {}
     if has_email and any(word in text for word in email_status_words):
         return "gmail_status", {}
     if has_email and ("mark" in text or "reset" in text) and "check" in text:

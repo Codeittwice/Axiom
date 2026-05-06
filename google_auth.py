@@ -74,6 +74,7 @@ def get_credentials(scopes: Iterable[str], config: dict | None = None):
         google.get("oauth_credentials_file") or "secrets/google_oauth_client.json"
     )
     token_file = _token_path(config)
+    oauth_timeout = int(google.get("oauth_timeout_seconds") or 180)
     granted_scopes = _token_scopes(token_file)
     auth_scopes = _scope_list([*granted_scopes, *scope_values]) or scope_values
 
@@ -105,7 +106,15 @@ def get_credentials(scopes: Iterable[str], config: dict | None = None):
             )
         _SERVICE_CACHE.clear()
         flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), auth_scopes)
-        creds = flow.run_local_server(port=0)
+        try:
+            creds = flow.run_local_server(port=0, timeout_seconds=oauth_timeout)
+        except TypeError:
+            creds = flow.run_local_server(port=0)
+        except Exception as exc:
+            raise GoogleAuthError(
+                "Google OAuth did not finish. Complete the browser consent window, "
+                "then try again."
+            ) from exc
 
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text(creds.to_json(), encoding="utf-8")

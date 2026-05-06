@@ -18,6 +18,15 @@ class Phase6AdvancedToolsTest(unittest.TestCase):
             self.assertIn("gmail.enabled is false", tools.gmail_status())
         self.assertIn("Home Assistant", tools.ha_get_state("light.office"))
 
+    def test_gmail_requires_explicit_connection(self):
+        enabled_cfg = copy.deepcopy(tools._CFG)
+        enabled_cfg.setdefault("gmail", {})["enabled"] = True
+        with (
+            patch.object(tools, "_refresh_config_from_disk", return_value=enabled_cfg),
+            patch("gmail_client.has_connection", return_value=False),
+        ):
+            self.assertIn("Say 'connect Gmail'", tools.new_emails())
+
     def test_code_intelligence_file_roundtrip(self):
         original_repos = tools._REPOS
         try:
