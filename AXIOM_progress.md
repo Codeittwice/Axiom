@@ -535,6 +535,7 @@ Prepare the Obsidian implementation before coding the task index, and give AXIOM
 - Added `AXIOM_obsidian_plan.md` with the proposed config, data model, implementation phases, voice workflow, and acceptance criteria.
 - Added the `explain_obsidian_workflow` tool.
 - Added deterministic routing so "explain the Obsidian workflow", "what is the Obsidian plan", or similar phrases trigger the workflow explanation without needing Gemini to infer the right tool.
+- Added `AXIOM_university_vault_plan.md` for a separate E-drive university vault, plus the future multi-source Tasks side panel design for University and Dev Apps.
 
 ### Next implementation slice
 
@@ -542,3 +543,5 @@ Prepare the Obsidian implementation before coding the task index, and give AXIOM
 - [ ] Add REST endpoints for task listing, capture, completion, and rescheduling.
 - [ ] Replace the Live Tasks widget backend with normalized Obsidian task data.
 - [ ] Add voice tools for capture, today/upcoming tasks, complete task, and reschedule task.
+- [ ] Add `obsidian.task_sources` so AXIOM can scan both the university vault and the dev apps folder.
+- [ ] Add a full Tasks tab or modal for complete task descriptions and actions.

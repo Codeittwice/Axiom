@@ -10,6 +10,9 @@ Turn the Obsidian vault into AXIOM's local task and context system:
 - Show useful tasks in the Live side panel.
 - Let AXIOM explain, add, update, and summarize the workflow by voice.
 
+For the university-specific vault structure and the future multi-source task panel, see
+`AXIOM_university_vault_plan.md`.
+
 ## Current State
 
 AXIOM already has basic Obsidian note tools in `tools.py`:
