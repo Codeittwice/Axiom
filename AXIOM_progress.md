@@ -476,6 +476,7 @@ Implement the original Phase 6 advanced-tools track after the newer Calendar/aca
 - Aligned side widgets with the main listening panel instead of the top header area.
 - Increased widget height so each side column spans roughly the main listening panel.
 - Changed the default hotkey from `space` to `ctrl+alt+space`.
+- Later changed the default hotkey from `ctrl+alt+space` to `ctrl+alt+shift+a` to avoid the Claude Desktop shortcut.
 
 ---
 

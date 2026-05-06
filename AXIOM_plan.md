@@ -47,7 +47,7 @@ Then open http://127.0.0.1:5000 (auto-opens on start).
 | TTS fallback | pyttsx3 | Free | Fully offline |
 | Audio I/O | sounddevice + scipy | Free | 16kHz WAV |
 | VAD | Energy-based (custom) | Free | No extra deps; stops on silence |
-| Wake word | keyboard hotkey (`ctrl+alt+space`) | Free | Default; openwakeword optional |
+| Wake word | keyboard hotkey (`ctrl+alt+shift+a`) | Free | Default; openwakeword optional |
 | Tool: search | duckduckgo-search | Free | No API key needed |
 | Tool: weather | wttr.in (HTTP) | Free | No API key needed |
 | Tool: apps | subprocess | Free | Windows shell |
@@ -127,7 +127,7 @@ copy .env.example .env
 python server.py
 ```
 - Browser opens automatically at http://127.0.0.1:5000
-- Press **CTRL+ALT+SPACE** to start speaking (hotkey configurable in `config.yaml`)
+- Press **CTRL+ALT+SHIFT+A** to start speaking (hotkey configurable in `config.yaml`)
 - Say **"exit"** or **"goodbye"** to quit cleanly
 - Press **ESC** to force-quit the terminal
 
@@ -140,7 +140,7 @@ python server.py
 | Key | Default | Notes |
 |---|---|---|
 | `assistant.name` | `Axiom` | Spoken name + system prompt identity |
-| `assistant.hotkey` | `ctrl+alt+space` | Any key name or combo from the `keyboard` library |
+| `assistant.hotkey` | `ctrl+alt+shift+a` | Any key name or combo from the `keyboard` library |
 | `audio.vad_energy_threshold` | `500` | Raise if mic picks up background noise |
 | `audio.vad_silence_duration` | `1.5` | Seconds of silence before stopping recording |
 | `audio.max_record_seconds` | `12` | Hard cap on recording duration |

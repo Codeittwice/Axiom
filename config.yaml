@@ -1,6 +1,6 @@
 assistant:
   name: Axiom
-  hotkey: ctrl+alt+space # key combo to start recording
+  hotkey: ctrl+alt+shift+a # key combo to start recording
   personality:
     tone: casual # professional | casual | snarky
     verbosity: concise # concise | normal | verbose
