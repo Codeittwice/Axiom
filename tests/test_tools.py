@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import tools
 import gmail_client
+from text_safety import clean_text
 
 
 class Phase6AdvancedToolsTest(unittest.TestCase):
@@ -36,6 +37,9 @@ class Phase6AdvancedToolsTest(unittest.TestCase):
     def test_gmail_sender_labels_are_speakable(self):
         self.assertEqual(gmail_client.sender_label("Uber Eats <uber@uber.com>"), "Uber Eats")
         self.assertEqual(gmail_client.sender_label("team@email.remarkable.com"), "team")
+
+    def test_text_cleanup_removes_invisible_combining_joiner(self):
+        self.assertEqual(clean_text("Hello\u034f world", collapse_whitespace=True), "Hello world")
 
     def test_code_intelligence_file_roundtrip(self):
         original_repos = tools._REPOS

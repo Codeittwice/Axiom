@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from google_auth import get_service, token_has_scopes
+from text_safety import clean_text
 
 
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -98,12 +99,12 @@ def _header(payload: dict, name: str) -> str:
 
 def sender_label(value: str) -> str:
     """Return a speakable sender name without email addresses."""
-    name, address = parseaddr(value or "")
+    name, address = parseaddr(clean_text(value, collapse_whitespace=True))
     label = (name or "").strip().strip('"')
     if not label and address:
         label = address.split("@", 1)[0]
     label = label.replace("_", " ").replace(".", " ").replace("-", " ")
-    return " ".join(label.split()) or "unknown sender"
+    return clean_text(" ".join(label.split()) or "unknown sender", collapse_whitespace=True)
 
 
 def _format_message(service, msg_id: str) -> dict:
@@ -119,13 +120,13 @@ def _format_message(service, msg_id: str) -> dict:
         ts = parsedate_to_datetime(date_value).isoformat() if date_value else ""
     except Exception:
         ts = date_value
-    raw_sender = _header(payload, "From")
+    raw_sender = clean_text(_header(payload, "From"), collapse_whitespace=True)
     return {
         "id": msg.get("id", ""),
         "sender": sender_label(raw_sender),
         "sender_raw": raw_sender,
-        "subject": _header(payload, "Subject") or "(no subject)",
-        "snippet": (msg.get("snippet", "") or "")[:80],
+        "subject": clean_text(_header(payload, "Subject"), collapse_whitespace=True) or "(no subject)",
+        "snippet": clean_text(msg.get("snippet", ""), collapse_whitespace=True)[:80],
         "ts": ts,
         "internal_ts": int(msg.get("internalDate") or 0),
     }

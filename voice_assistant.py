@@ -8,10 +8,12 @@ Pipeline:
 """
 
 import asyncio
+from collections import deque
 import json
 import os
 import random
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -27,7 +29,15 @@ import yaml
 from dotenv import load_dotenv
 from scipy.io.wavfile import write as wav_write
 
+from text_safety import clean_text, console_text
+
 load_dotenv()
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 # ─── Load config ───────────────────────────────────────────────────────────────
 with open("config.yaml") as _f:
@@ -96,7 +106,7 @@ def _format_history_for_summary(history: list) -> str:
     lines = []
     for item in history:
         role = "User" if item.get("role") == "user" else ASSISTANT_NAME
-        lines.append(f"{role}: {item.get('text', '')}")
+        lines.append(f"{role}: {clean_text(item.get('text', ''))}")
     return "\n".join(lines)
 
 
@@ -122,7 +132,7 @@ def _maybe_summarize_history(history: list) -> list:
             f"{_format_history_for_summary(older)}"
         )
         response = model.generate_content(prompt)
-        summary = response.text.strip()
+        summary = clean_text(response.text.strip())
         return [
             {
                 "role": "user",
@@ -131,7 +141,7 @@ def _maybe_summarize_history(history: list) -> list:
             {"role": "model", "text": summary},
         ] + recent
     except Exception as e:
-        print(f"[AXIOM] Conversation summary failed ({e}); keeping recent history only.")
+        print(console_text(f"[AXIOM] Conversation summary failed ({e}); keeping recent history only."))
         return history[-MAX_HISTORY:]
 
 # ─── VAD Recording ────────────────────────────────────────────────────────────
@@ -146,6 +156,8 @@ def record_audio() -> Optional[str]:
     chunk_size   = int(SAMPLE_RATE * chunk_secs)
     max_chunks   = int(MAX_RECORD_SECS / chunk_secs)
     silence_need = int(VAD_SILENCE_SECS / chunk_secs)
+    pre_roll_secs = float(CFG.get("audio", {}).get("pre_roll_seconds", 0.35) or 0)
+    pre_roll = deque(maxlen=max(1, int(pre_roll_secs / chunk_secs)))
 
     _send("state", {"state": "listening"})
     print(f"[AXIOM] Listening (threshold={VAD_THRESHOLD})…")
@@ -160,6 +172,8 @@ def record_audio() -> Optional[str]:
             energy   = int(np.abs(chunk).mean())
 
             if energy > VAD_THRESHOLD:
+                if not started:
+                    chunks.extend(pre_roll)
                 started       = True
                 silence_count = 0
                 chunks.append(chunk)
@@ -168,6 +182,8 @@ def record_audio() -> Optional[str]:
                 silence_count += 1
                 if silence_count >= silence_need:
                     break
+            else:
+                pre_roll.append(chunk)
 
     if not chunks:
         print("[AXIOM] No speech detected.")
@@ -182,10 +198,24 @@ def record_audio() -> Optional[str]:
 
 def transcribe(audio_path: str) -> str:
     _send("state", {"state": "transcribing"})
-    result = _whisper.transcribe(audio_path, fp16=False)
+    whisper_cfg = CFG.get("whisper", {}) or {}
+    options = {
+        "fp16": False,
+        "temperature": float(whisper_cfg.get("temperature", 0) or 0),
+        "condition_on_previous_text": bool(whisper_cfg.get("condition_on_previous_text", False)),
+    }
+    if whisper_cfg.get("language"):
+        options["language"] = whisper_cfg["language"]
+    if whisper_cfg.get("initial_prompt"):
+        options["initial_prompt"] = whisper_cfg["initial_prompt"]
+    if whisper_cfg.get("no_speech_threshold") is not None:
+        options["no_speech_threshold"] = float(whisper_cfg["no_speech_threshold"])
+    if whisper_cfg.get("logprob_threshold") is not None:
+        options["logprob_threshold"] = float(whisper_cfg["logprob_threshold"])
+    result = _whisper.transcribe(audio_path, **options)
     os.unlink(audio_path)
-    text = result["text"].strip()
-    print(f"[AXIOM] You said: {text}")
+    text = clean_text(result.get("text", ""), collapse_whitespace=True)
+    print(console_text(f"[AXIOM] You said: {text}"))
     return text
 
 # ─── Gemini with tool use ─────────────────────────────────────────────────────
@@ -283,15 +313,16 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
     text exchange is saved, keeping memory.json clean and portable.
     """
     from tools import GEMINI_TOOLS, execute_tool
+    user_text = clean_text(user_text)
 
     direct_tool = _direct_tool_for_text(user_text)
     if direct_tool:
         name, args = direct_tool
-        print(f"[AXIOM] Direct tool: {name}({args})")
+        print(console_text(f"[AXIOM] Direct tool: {name}({args})"))
         _send("tool", {"name": name, "input": args})
         _send("state", {"state": "tool"})
-        reply = execute_tool(name, args)
-        print(f"[AXIOM] {ASSISTANT_NAME}: {reply}")
+        reply = clean_text(execute_tool(name, args))
+        print(console_text(f"[AXIOM] {ASSISTANT_NAME}: {reply}"))
         updated_history = history + [
             {"role": "user", "text": user_text},
             {"role": "model", "text": reply},
@@ -301,7 +332,7 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
 
     # Convert stored text history to Gemini's content format
     gemini_history = [
-        {"role": h["role"], "parts": [{"text": h["text"]}]}
+        {"role": h["role"], "parts": [{"text": clean_text(h["text"])}]}
         for h in history
     ]
 
@@ -317,7 +348,8 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
 
     # Tool use loop
     while True:
-        fn_calls = [p for p in response.parts if p.function_call.name] if response.parts else []
+        parts = _response_parts(response)
+        fn_calls = [p for p in parts if getattr(p.function_call, "name", "")]
         if not fn_calls:
             break
 
@@ -325,11 +357,11 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
         for part in fn_calls:
             fn   = part.function_call
             args = dict(fn.args)
-            print(f"[AXIOM] Tool: {fn.name}({args})")
+            print(console_text(f"[AXIOM] Tool: {fn.name}({args})"))
             _send("tool",  {"name": fn.name, "input": args})
             _send("state", {"state": "tool"})
             _slow_tool_acknowledgement(fn.name)
-            result = execute_tool(fn.name, args)
+            result = clean_text(execute_tool(fn.name, args))
             fn_responses.append(
                 genai.protos.Part(
                     function_response=genai.protos.FunctionResponse(
@@ -341,8 +373,8 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
         _send("state", {"state": "thinking"})
         response = chat.send_message(fn_responses)
 
-    reply = response.text.strip()
-    print(f"[AXIOM] {ASSISTANT_NAME}: {reply}")
+    reply = _response_text(response)
+    print(console_text(f"[AXIOM] {ASSISTANT_NAME}: {reply}"))
 
     updated_history = history + [
         {"role": "user",  "text": user_text},
@@ -350,10 +382,39 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
     ]
     return reply, _maybe_summarize_history(updated_history)
 
+
+def _response_text(response) -> str:
+    try:
+        return clean_text(response.text.strip())
+    except Exception:
+        parts = []
+        for part in _response_parts(response):
+            text = getattr(part, "text", "")
+            if text:
+                parts.append(text)
+        if parts:
+            return clean_text("\n".join(parts))
+        finish_reason = ""
+        try:
+            finish_reason = getattr(response.candidates[0], "finish_reason", "")
+        except Exception:
+            finish_reason = ""
+        if finish_reason:
+            return f"Gemini did not return a spoken response. Finish reason: {finish_reason}."
+        return "Gemini did not return a spoken response."
+
+
+def _response_parts(response) -> list:
+    try:
+        return list(response.parts or [])
+    except Exception:
+        return []
+
 # ─── TTS ──────────────────────────────────────────────────────────────────────
 
 _speech_interrupt = threading.Event()
 _speaking = False
+_pyttsx3_engine = None
 
 
 def _tts_config() -> dict:
@@ -364,14 +425,16 @@ def _split_for_tts(text: str) -> list[str]:
     """
     Split long responses into sentence-ish chunks so Edge TTS can start sooner.
     """
+    text = clean_text(text)
     if not _tts_config().get("sentence_streaming", True):
         return [text]
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
     chunks: list[str] = []
     current = ""
+    max_chars = int(_tts_config().get("max_chunk_chars", 150) or 150)
     for part in parts or [text]:
         candidate = f"{current} {part}".strip()
-        if len(candidate) <= 220:
+        if len(candidate) <= max_chars:
             current = candidate
         else:
             if current:
@@ -404,6 +467,8 @@ def speak(text: str) -> bool:
     _send("state", {"state": "speaking"})
     try:
         for chunk in _split_for_tts(text):
+            if not chunk:
+                continue
             if _speech_interrupt.is_set():
                 interrupted = True
                 break
@@ -423,8 +488,12 @@ def _speak_edge(text: str) -> bool:
     async def _run():
         import edge_tts
         import pygame
-        voice       = CFG["tts"]["edge_voice"]
-        communicate = edge_tts.Communicate(text, voice)
+        cfg         = _tts_config()
+        voice       = cfg.get("edge_voice") or CFG["tts"]["edge_voice"]
+        rate        = cfg.get("edge_rate", "+10%")
+        volume      = cfg.get("edge_volume", "+0%")
+        pitch       = cfg.get("edge_pitch", "+0Hz")
+        communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume, pitch=pitch)
         tmp         = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         await communicate.save(tmp.name)
         return tmp.name
@@ -450,8 +519,11 @@ def _speak_edge(text: str) -> bool:
 
 
 def _speak_pyttsx3(text: str) -> bool:
+    global _pyttsx3_engine
     import pyttsx3
-    engine = pyttsx3.init()
+    if _pyttsx3_engine is None:
+        _pyttsx3_engine = pyttsx3.init()
+    engine = _pyttsx3_engine
     engine.setProperty("rate",   CFG["tts"]["pyttsx3_rate"])
     engine.setProperty("volume", CFG["tts"]["pyttsx3_volume"])
     engine.say(text)

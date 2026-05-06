@@ -1026,8 +1026,7 @@ def last_emails(n: int = 5) -> str:
     for item in items:
         sender = item.get("sender", "unknown sender")
         subject = item.get("subject", "(no subject)")
-        snippet = item.get("snippet", "")
-        lines.append(f"- {sender}: {subject}. {snippet}")
+        lines.append(f"- {sender}: {subject}")
     return "Recent emails:\n" + "\n".join(lines)
 
 
