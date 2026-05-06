@@ -41,6 +41,11 @@ class Phase6AdvancedToolsTest(unittest.TestCase):
     def test_text_cleanup_removes_invisible_combining_joiner(self):
         self.assertEqual(clean_text("Hello\u034f world", collapse_whitespace=True), "Hello world")
 
+    def test_obsidian_workflow_explanation_command(self):
+        result = tools.execute_tool("explain_obsidian_workflow", {})
+        self.assertIn("Obsidian workflow", result)
+        self.assertIn("AXIOM_obsidian_plan.md", result)
+
     def test_code_intelligence_file_roundtrip(self):
         original_repos = tools._REPOS
         try:

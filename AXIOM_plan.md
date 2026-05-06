@@ -84,6 +84,7 @@ Then open http://127.0.0.1:5000 (auto-opens on start).
 | `AXIOM_progress.md` | ✅ Done | Running implementation log per phase |
 | `AXIOM_roadmap.md` | ✅ Done | Tool ideas backlog |
 | `AXIOM_architecture_plan.md` | ✅ Done | Electron rationale (Phase 5) |
+| `AXIOM_obsidian_plan.md` | Phase 6c | Obsidian task workflow and implementation plan |
 | `memory.json` | Auto-created | Persistent conversation history |
 | `.env` | **You create** | Copy `.env.example`, add your key |
 

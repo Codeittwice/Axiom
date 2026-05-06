@@ -258,9 +258,18 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     text = user_text.lower()
     has_calendar = "calendar" in text or "schedule" in text or "meeting" in text or "event" in text
     has_email = "email" in text or "mail" in text or "gmail" in text or "inbox" in text
+    has_obsidian = "obsidian" in text or "vault" in text
     config_words = ("config", "setting", "enabled", "disabled", "true", "false", "check")
     email_status_words = ("config", "setting", "enabled", "disabled", "true", "false", "status")
 
+    if has_obsidian and (
+        "workflow" in text
+        or "plan" in text
+        or "explain" in text
+        or "implementation" in text
+        or "how will" in text
+    ):
+        return "explain_obsidian_workflow", {}
     if has_calendar and any(word in text for word in config_words):
         return "calendar_status", {}
     if has_email and ("connect" in text or "authorize" in text or "authorise" in text or "consent" in text):

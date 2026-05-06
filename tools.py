@@ -81,6 +81,11 @@ GEMINI_TOOLS = [{
             }
         },
         {
+            "name": "explain_obsidian_workflow",
+            "description": "Explain AXIOM's planned Obsidian task workflow, including capture, task scanning, side panel display, and voice commands.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
             "name": "get_datetime",
             "description": "Get the current local date and time.",
             "parameters": {"type": "object", "properties": {}}
@@ -1240,6 +1245,17 @@ def describe_screen() -> str:
 
 # ── Obsidian ──────────────────────────────────────────────────────────────────
 
+def explain_obsidian_workflow() -> str:
+    return (
+        "The Obsidian workflow has four steps. "
+        "First, you capture tasks or ideas by voice into an AXIOM inbox note or today's daily note. "
+        "Second, AXIOM scans configured vault folders for markdown tasks, due dates, priorities, tags, projects, and courses. "
+        "Third, the Live Tasks side panel shows the most relevant open tasks, while voice commands can read today's or this week's tasks. "
+        "Fourth, AXIOM will update exact task lines when you complete or reschedule something, staying inside the configured vault. "
+        "The implementation plan is saved in AXIOM_obsidian_plan.md."
+    )
+
+
 def _vault_path() -> Path | None:
     vp = _OBSIDIAN.get("vault_path", "").strip()
     return Path(vp) if vp else None
@@ -1410,6 +1426,7 @@ def execute_tool(name: str, inputs: dict) -> str:
         "read_note":        lambda i: read_note(i["title"]),
         "append_daily_note":lambda i: append_daily_note(i["content"]),
         "search_notes":     lambda i: search_notes(i["query"]),
+        "explain_obsidian_workflow": lambda i: explain_obsidian_workflow(),
         "set_volume":       lambda i: set_volume(int(i["level"])),
         "set_timer":        lambda i: set_timer(float(i["minutes"]), i.get("label", "Timer")),
         "read_clipboard":   lambda i: read_clipboard(),

@@ -522,3 +522,23 @@ Finish the email slice without expanding permissions beyond read-only Gmail meta
 - [x] Email REST endpoints return JSON and graceful errors.
 - [x] OAuth can request Calendar + Gmail scopes with one shared token file.
 - [ ] Live Gmail OAuth flow not exercised in repo tests - requires the user's Google test-user consent.
+
+---
+
+## 2026-05-06 - Phase 6c: Obsidian Workflow Plan
+
+### Goal
+Prepare the Obsidian implementation before coding the task index, and give AXIOM a voice command that can explain the planned workflow on demand.
+
+### Implementation log
+
+- Added `AXIOM_obsidian_plan.md` with the proposed config, data model, implementation phases, voice workflow, and acceptance criteria.
+- Added the `explain_obsidian_workflow` tool.
+- Added deterministic routing so "explain the Obsidian workflow", "what is the Obsidian plan", or similar phrases trigger the workflow explanation without needing Gemini to infer the right tool.
+
+### Next implementation slice
+
+- [ ] Create `obsidian_tasks.py` parser/indexer.
+- [ ] Add REST endpoints for task listing, capture, completion, and rescheduling.
+- [ ] Replace the Live Tasks widget backend with normalized Obsidian task data.
+- [ ] Add voice tools for capture, today/upcoming tasks, complete task, and reschedule task.
