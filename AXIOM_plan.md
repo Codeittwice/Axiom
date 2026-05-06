@@ -246,7 +246,9 @@ First run downloads the model (~200MB).
 - [x] Spotify control via `spotipy` — "play lo-fi music"
 - [x] Read/write/search/explain files inside configured repos
 - [x] Google Calendar integration - Phase 6a voice tools + REST endpoints
+- [x] Gmail read-only triage - unread count, recent messages, summary, and checkpointed new-mail checks
 - [x] Screenshot + vision — describe what's on screen
+- [ ] Obsidian vault todo index - queued for Phase 6c
 - [ ] Multi-language support (Whisper supports 99 languages)
 - [ ] Package as `.exe` via PyInstaller
 - [ ] Custom "Hey Axiom" wake word training (openwakeword)

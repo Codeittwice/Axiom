@@ -227,10 +227,26 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     """
     text = user_text.lower()
     has_calendar = "calendar" in text or "schedule" in text or "meeting" in text or "event" in text
+    has_email = "email" in text or "mail" in text or "gmail" in text or "inbox" in text
     config_words = ("config", "setting", "enabled", "disabled", "true", "false", "check")
+    email_status_words = ("config", "setting", "enabled", "disabled", "true", "false", "status")
 
     if has_calendar and any(word in text for word in config_words):
         return "calendar_status", {}
+    if has_email and any(word in text for word in email_status_words):
+        return "gmail_status", {}
+    if has_email and ("mark" in text or "reset" in text) and "check" in text:
+        return "mark_email_check", {}
+    if has_email and ("new" in text or "since" in text):
+        return "new_emails", {}
+    if has_email and "unread" in text:
+        return "unread_count", {}
+    if has_email and ("recent" in text or "latest" in text or "last" in text):
+        return "last_emails", {"n": 5}
+    if has_email and ("summary" in text or "summarize" in text or "summarise" in text):
+        return "summarize_inbox", {}
+    if has_email and ("check" in text or "what" in text or "any" in text):
+        return "new_emails", {}
     if has_calendar and "this week" in text:
         now = datetime.now().astimezone()
         end = (now + timedelta(days=7 - now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)

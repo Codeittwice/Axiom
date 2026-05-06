@@ -476,3 +476,42 @@ Implement the original Phase 6 advanced-tools track after the newer Calendar/aca
 - Aligned side widgets with the main listening panel instead of the top header area.
 - Increased widget height so each side column spans roughly the main listening panel.
 - Changed the default hotkey from `space` to `ctrl+alt+space`.
+
+---
+
+## 2026-05-06 - Phase 6b: Gmail Read-Only Integration
+
+### Goal
+Finish the email slice without expanding permissions beyond read-only Gmail metadata/snippets, and queue the Obsidian vault todo implementation for the next productivity pass.
+
+### Implementation log
+
+- Upgraded `google_auth.py` so an existing Calendar token can be re-consented with the added Gmail scope instead of silently reusing a token that lacks it.
+- Added `token_has_scopes()` for non-interactive dashboard checks.
+- Expanded `gmail_client.py` with a checkpoint file at `secrets/last_email_check.json`.
+- Added `unread_since_last_check()`, `mark_check_now()`, and recent-message helpers that only request Gmail metadata/snippets.
+- Added REST endpoints:
+  - `GET /api/email/unread`
+  - `GET /api/email/recent?n=10`
+  - `GET /api/email/summary`
+  - `POST /api/email/mark_check`
+- Updated the Live dashboard email widget backend to report Gmail as "not connected" until the cached Google token grants `gmail.readonly`, without launching OAuth during dashboard refresh.
+- Added voice routes/tools for "new emails" and "mark email check".
+- Added a Gmail status tool for config/OAuth diagnostics.
+- Enabled the Gmail config block and added state-file/use-summary settings.
+
+### Queued todo
+
+- [ ] Phase 6c: Obsidian vault todos implementation.
+- [ ] Add a proper task index module that scans configured vault folders.
+- [ ] Support due dates, course/project grouping, priorities, and source-note links.
+- [ ] Expose todo REST endpoints and connect the existing Tasks side panel to the richer index.
+
+### Acceptance criteria status
+
+- [x] Gmail remains read-only.
+- [x] Email tools expose unread count, recent messages, inbox summary, and new-unread-since-last-check.
+- [x] Gmail status explains enabled/token/scope state.
+- [x] Email REST endpoints return JSON and graceful errors.
+- [x] OAuth can request Calendar + Gmail scopes with one shared token file.
+- [ ] Live Gmail OAuth flow not exercised in repo tests - requires the user's Google test-user consent.

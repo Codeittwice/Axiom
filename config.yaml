@@ -106,8 +106,10 @@ spotify:
   cache_path: "secrets/spotify_token.json"
 
 gmail:
-  enabled: false
+  enabled: true
   scopes: ["https://www.googleapis.com/auth/gmail.readonly"]
+  state_file: "secrets/last_email_check.json"
+  use_gemini_summary: false
   max_results: 20
 
 home_assistant:

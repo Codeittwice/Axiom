@@ -1,6 +1,9 @@
 """Read-only Gmail triage helpers for AXIOM."""
 
+import json
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 
 import yaml
 
@@ -21,6 +24,44 @@ def _cfg(config: dict | None = None) -> dict:
 
 def _gmail(config: dict | None = None) -> dict:
     return (_cfg(config).get("gmail", {}) or {})
+
+
+def _max_results(default: int, config: dict | None = None) -> int:
+    configured = int(_gmail(config).get("max_results", 20) or 20)
+    return min(max(1, int(default or 1)), configured)
+
+
+def _state_path(config: dict | None = None) -> Path:
+    return Path(_gmail(config).get("state_file") or "secrets/last_email_check.json")
+
+
+def _load_state(config: dict | None = None) -> dict:
+    path = _state_path(config)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_state(state: dict, config: dict | None = None) -> None:
+    path = _state_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _cutoff_ms(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
+    except Exception:
+        return None
 
 
 def _service(config: dict | None = None):
@@ -57,7 +98,20 @@ def _format_message(service, msg_id: str) -> dict:
         "subject": _header(payload, "Subject") or "(no subject)",
         "snippet": (msg.get("snippet", "") or "")[:80],
         "ts": ts,
+        "internal_ts": int(msg.get("internalDate") or 0),
     }
+
+
+def _messages(query: str = "", n: int = 5, config: dict | None = None) -> list[dict]:
+    service = _service(config)
+    params = {
+        "userId": "me",
+        "maxResults": _max_results(n, config),
+    }
+    if query:
+        params["q"] = query
+    data = service.users().messages().list(**params).execute()
+    return [_format_message(service, item["id"]) for item in data.get("messages", [])]
 
 
 def unread_count(config: dict | None = None) -> int:
@@ -71,13 +125,35 @@ def unread_count(config: dict | None = None) -> int:
 
 
 def last_emails(n: int = 5, config: dict | None = None) -> list[dict]:
-    service = _service(config)
-    max_results = min(max(1, int(n or 5)), int(_gmail(config).get("max_results", 20)))
-    data = service.users().messages().list(
-        userId="me",
-        maxResults=max_results,
-    ).execute()
-    return [_format_message(service, item["id"]) for item in data.get("messages", [])]
+    return _messages(n=n, config=config)
+
+
+def unread_since_last_check(config: dict | None = None) -> dict:
+    state = _load_state(config)
+    last_check = state.get("last_check")
+    cutoff = _cutoff_ms(last_check)
+    query = "is:unread"
+    if cutoff:
+        dt = datetime.fromtimestamp(cutoff / 1000, tz=timezone.utc)
+        query = f"{query} after:{dt.strftime('%Y/%m/%d')}"
+
+    items = _messages(query=query, n=_gmail(config).get("max_results", 20), config=config)
+    if cutoff:
+        items = [item for item in items if int(item.get("internal_ts") or 0) > cutoff]
+
+    new_state = mark_check_now(config)
+    return {
+        "count": len(items),
+        "items": items,
+        "last_check": new_state["last_check"],
+        "previous_check": last_check,
+    }
+
+
+def mark_check_now(config: dict | None = None) -> dict:
+    state = {"last_check": _now_iso()}
+    _save_state(state, config)
+    return state
 
 
 def summarize_inbox(config: dict | None = None) -> dict:

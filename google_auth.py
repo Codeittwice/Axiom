@@ -5,6 +5,7 @@ Keeps Google API setup out of tools.py. Tokens live under secrets/ and are
 never committed.
 """
 
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -37,6 +38,29 @@ def _token_path(config: dict | None = None) -> Path:
     return Path(google.get("token_file") or "secrets/google_token.json")
 
 
+def _token_scopes(token_file: Path) -> list[str]:
+    if not token_file.exists():
+        return []
+    try:
+        data = json.loads(token_file.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    scopes = data.get("scopes") or data.get("scope") or []
+    if isinstance(scopes, str):
+        scopes = scopes.split()
+    return _scope_list(scopes)
+
+
+def token_has_scopes(scopes: Iterable[str], config: dict | None = None) -> bool:
+    """Return true when the cached token already grants every requested scope."""
+    requested = set(_scope_list(scopes))
+    if not requested:
+        return True
+    granted = set(_token_scopes(_token_path(config)))
+    return requested.issubset(granted)
+
+
 def get_credentials(scopes: Iterable[str], config: dict | None = None):
     """
     Return valid Google credentials for the requested scopes.
@@ -50,6 +74,8 @@ def get_credentials(scopes: Iterable[str], config: dict | None = None):
         google.get("oauth_credentials_file") or "secrets/google_oauth_client.json"
     )
     token_file = _token_path(config)
+    granted_scopes = _token_scopes(token_file)
+    auth_scopes = _scope_list([*granted_scopes, *scope_values]) or scope_values
 
     try:
         from google.auth.transport.requests import Request
@@ -62,12 +88,14 @@ def get_credentials(scopes: Iterable[str], config: dict | None = None):
 
     creds = None
     if token_file.exists():
-        creds = Credentials.from_authorized_user_file(str(token_file), scope_values)
+        creds = Credentials.from_authorized_user_file(str(token_file), auth_scopes)
 
-    if creds and creds.valid:
+    missing_scopes = not set(scope_values).issubset(set(granted_scopes))
+
+    if creds and creds.valid and not missing_scopes:
         return creds
 
-    if creds and creds.expired and creds.refresh_token:
+    if creds and creds.expired and creds.refresh_token and not missing_scopes:
         creds.refresh(Request())
     else:
         if not credentials_file.exists():
@@ -75,7 +103,8 @@ def get_credentials(scopes: Iterable[str], config: dict | None = None):
                 f"Google OAuth credentials not found at {credentials_file}. "
                 "Create a Google OAuth desktop client and save it there."
             )
-        flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), scope_values)
+        _SERVICE_CACHE.clear()
+        flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), auth_scopes)
         creds = flow.run_local_server(port=0)
 
     token_file.parent.mkdir(parents=True, exist_ok=True)

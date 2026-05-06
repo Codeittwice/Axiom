@@ -350,6 +350,21 @@ GEMINI_TOOLS = [{
             "description": "Summarize Gmail unread count and the latest few email subjects/snippets.",
             "parameters": {"type": "object", "properties": {}}
         },
+        {
+            "name": "new_emails",
+            "description": "Read unread Gmail messages since the last explicit email check, then update the check timestamp. Never returns full bodies.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "mark_email_check",
+            "description": "Set the Gmail last-check timestamp to now without reading messages.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "gmail_status",
+            "description": "Check Gmail config, OAuth client file, token file, and whether the token grants gmail.readonly.",
+            "parameters": {"type": "object", "properties": {}}
+        },
 
         # Smart home (Phase 6 old advanced tools)
         {
@@ -980,7 +995,7 @@ def explain_file(path: str, repo_name: str = "") -> str:
 def unread_count() -> str:
     try:
         import gmail_client
-        count = gmail_client.unread_count(_CFG)
+        count = gmail_client.unread_count(_refresh_config_from_disk())
         return f"You have {count} unread email{'s' if count != 1 else ''}."
     except Exception as e:
         return f"Could not read Gmail unread count: {e}"
@@ -989,7 +1004,7 @@ def unread_count() -> str:
 def last_emails(n: int = 5) -> str:
     try:
         import gmail_client
-        items = gmail_client.last_emails(n, _CFG)
+        items = gmail_client.last_emails(n, _refresh_config_from_disk())
     except Exception as e:
         return f"Could not read recent emails: {e}"
     if not items:
@@ -1006,7 +1021,7 @@ def last_emails(n: int = 5) -> str:
 def summarize_inbox() -> str:
     try:
         import gmail_client
-        summary = gmail_client.summarize_inbox(_CFG)
+        summary = gmail_client.summarize_inbox(_refresh_config_from_disk())
     except Exception as e:
         return f"Could not summarize Gmail inbox: {e}"
     count = summary.get("unread_count", 0)
@@ -1017,6 +1032,62 @@ def summarize_inbox() -> str:
         for item in recent:
             lines.append(f"- {item.get('sender', 'unknown')}: {item.get('subject', '(no subject)')}")
     return "\n".join(lines)
+
+
+def new_emails() -> str:
+    try:
+        import gmail_client
+        result = gmail_client.unread_since_last_check(_refresh_config_from_disk())
+    except Exception as e:
+        return f"Could not check new Gmail messages: {e}"
+    items = result.get("items", [])
+    if not items:
+        return "No new unread emails since the last check."
+    lines = [f"New unread emails since last check: {len(items)}."]
+    for item in items[:5]:
+        lines.append(f"- {item.get('sender', 'unknown')}: {item.get('subject', '(no subject)')}")
+    if len(items) > 5:
+        lines.append(f"and {len(items) - 5} more")
+    return "\n".join(lines)
+
+
+def mark_email_check() -> str:
+    try:
+        import gmail_client
+        gmail_client.mark_check_now(_refresh_config_from_disk())
+        return "Email check timestamp updated."
+    except Exception as e:
+        return f"Could not update email check timestamp: {e}"
+
+
+def gmail_status() -> str:
+    try:
+        config = _refresh_config_from_disk()
+        gmail = config.get("gmail", {}) or {}
+        google = config.get("google", {}) or {}
+        credentials = Path(google.get("oauth_credentials_file") or "secrets/google_oauth_client.json")
+        token = Path(google.get("token_file") or "secrets/google_token.json")
+        scopes = gmail.get("scopes") or ["https://www.googleapis.com/auth/gmail.readonly"]
+        try:
+            from google_auth import token_has_scopes
+            has_scope = token_has_scopes(scopes, config)
+        except Exception:
+            has_scope = False
+        enabled = bool(gmail.get("enabled", False))
+        parts = [
+            f"gmail.enabled is {'true' if enabled else 'false'} in config.yaml",
+            f"OAuth client file {'exists' if credentials.exists() else 'is missing'} at {credentials}",
+            f"token file {'exists' if token.exists() else 'does not exist yet'} at {token}",
+            f"gmail.readonly scope is {'granted' if has_scope else 'not granted yet'}",
+            f"state_file is {gmail.get('state_file') or 'secrets/last_email_check.json'}",
+        ]
+        if enabled and not token.exists():
+            parts.append("Gmail is enabled, but Google has not been connected successfully yet.")
+        elif enabled and not has_scope:
+            parts.append("Gmail is enabled, but the Google token needs Gmail consent.")
+        return ". ".join(parts) + "."
+    except Exception as e:
+        return f"Could not check Gmail config: {e}"
 
 
 def _home_assistant_config() -> dict:
@@ -1275,6 +1346,9 @@ def execute_tool(name: str, inputs: dict) -> str:
         "unread_count":     lambda i: unread_count(),
         "last_emails":      lambda i: last_emails(int(i.get("n", 5))),
         "summarize_inbox":  lambda i: summarize_inbox(),
+        "new_emails":       lambda i: new_emails(),
+        "mark_email_check": lambda i: mark_email_check(),
+        "gmail_status":     lambda i: gmail_status(),
         "ha_get_state":     lambda i: ha_get_state(i["entity_id"]),
         "ha_call_service":  lambda i: ha_call_service(i["domain"], i["service"], i.get("data", {})),
         "run_git":          lambda i: run_git(i["command"], i.get("repo_name", "")),

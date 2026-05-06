@@ -191,6 +191,44 @@ def api_calendar_upcoming():
         return jsonify({"events": [], "error": str(e)})
 
 
+@app.route("/api/email/unread", methods=["GET"])
+def api_email_unread():
+    try:
+        import gmail_client
+        return jsonify(gmail_client.unread_since_last_check(CFG))
+    except Exception as e:
+        return jsonify({"count": 0, "items": [], "error": str(e)})
+
+
+@app.route("/api/email/recent", methods=["GET"])
+def api_email_recent():
+    try:
+        n = int(request.args.get("n", 10))
+        import gmail_client
+        return jsonify({"items": gmail_client.last_emails(n, CFG)})
+    except Exception as e:
+        return jsonify({"items": [], "error": str(e)})
+
+
+@app.route("/api/email/summary", methods=["GET"])
+def api_email_summary():
+    try:
+        import gmail_client
+        return jsonify(gmail_client.summarize_inbox(CFG))
+    except Exception as e:
+        return jsonify({"unread_count": None, "recent": [], "error": str(e)})
+
+
+@app.route("/api/email/mark_check", methods=["POST"])
+def api_email_mark_check():
+    try:
+        import gmail_client
+        state = gmail_client.mark_check_now(CFG)
+        return jsonify({"ok": True, **state})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 def _dashboard_schedule() -> dict:
     try:
         google = CFG.get("google", {}) or {}
@@ -251,14 +289,19 @@ def _dashboard_projects() -> dict:
 
 def _dashboard_email() -> dict:
     try:
-        if not (CFG.get("gmail", {}) or {}).get("enabled", False):
+        gmail = CFG.get("gmail", {}) or {}
+        if not gmail.get("enabled", False):
             return {"unread_count": None, "error": "Gmail disabled"}
-        google = CFG.get("google", {}) or {}
-        token = Path(google.get("token_file") or "secrets/google_token.json")
-        if not token.exists():
-            return {"unread_count": None, "error": "Gmail not connected"}
         import gmail_client
-        return {"unread_count": gmail_client.unread_count(CFG)}
+        from google_auth import token_has_scopes
+        scopes = gmail.get("scopes") or gmail_client.GMAIL_SCOPES
+        if not token_has_scopes(scopes, CFG):
+            return {"unread_count": None, "error": "Gmail not connected"}
+        summary = gmail_client.summarize_inbox(CFG)
+        return {
+            "unread_count": summary.get("unread_count"),
+            "recent": summary.get("recent", []),
+        }
     except Exception as e:
         return {"unread_count": None, "error": str(e)}
 
