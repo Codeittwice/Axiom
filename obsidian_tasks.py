@@ -233,6 +233,63 @@ def reschedule_task(config: dict[str, Any], task_id: str, due: str) -> dict[str,
     return updated_task
 
 
+def update_task(
+    config: dict[str, Any],
+    task_id: str,
+    text: str = "",
+    due: str | None = None,
+    priority: str | None = None,
+    project: str | None = None,
+    course: str | None = None,
+) -> dict[str, Any]:
+    task, path, lines = _find_task(config, task_id)
+    raw = lines[task["line"] - 1]
+    checked = "[x]" if task.get("status") == "done" else "[ ]"
+    updated_text = text.strip() if text and text.strip() else _clean_task_text(task["text"])
+
+    metadata = _metadata_from_task(task)
+    if due is not None:
+        due = due.strip()
+        if due:
+            _require_date(due)
+        metadata["due"] = due
+    if priority is not None:
+        priority = priority.strip().lower()
+        if priority and priority not in {"low", "medium", "high"}:
+            raise ObsidianTaskError("Priority must be low, medium, or high.")
+        metadata["priority"] = priority
+    if project is not None:
+        metadata["project"] = project.strip()
+    if course is not None:
+        metadata["course"] = course.strip()
+
+    prefix_match = re.match(r"^(\s*[-*]\s+)", raw)
+    prefix = prefix_match.group(1) if prefix_match else "- "
+    parts = [f"{prefix}{checked} {updated_text}"]
+    if metadata["due"]:
+        parts.append(f"due:: {metadata['due']}")
+    if metadata["priority"]:
+        parts.append(f"priority:: {metadata['priority']}")
+    if metadata["project"]:
+        parts.append(f"project:: {metadata['project']}")
+    if metadata["course"]:
+        parts.append(f"course:: {metadata['course']}")
+
+    updated = " ".join(parts).rstrip()
+    lines[task["line"] - 1] = updated
+    _write_lines(path, lines)
+    _archive_change(config, f"Updated: {task['text']} -> {updated_text} ({task['source']}:{task['line']})")
+    return parse_task_line(updated, task["source"], task["line"], config) or {**task, "text": updated_text}
+
+
+def delete_task(config: dict[str, Any], task_id: str) -> dict[str, Any]:
+    task, path, lines = _find_task(config, task_id)
+    del lines[task["line"] - 1]
+    _write_lines(path, lines)
+    _archive_change(config, f"Deleted: {task['text']} ({task['source']}:{task['line']})")
+    return task
+
+
 def find_task_by_query(config: dict[str, Any], query: str) -> dict[str, Any]:
     query = query.strip().lower()
     if not query:
@@ -267,6 +324,24 @@ def _find_task(config: dict[str, Any], task_id: str) -> tuple[dict[str, Any], Pa
 
 def _write_lines(path: Path, lines: list[str]) -> None:
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def _clean_task_text(text: str) -> str:
+    text = DUE_RE.sub("", text)
+    text = PRIORITY_RE.sub("", text)
+    text = PROJECT_RE.sub("", text)
+    text = COURSE_RE.sub("", text)
+    text = re.sub(r"(^|\s)!{1,3}(\s|$)", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _metadata_from_task(task: dict[str, Any]) -> dict[str, str]:
+    return {
+        "due": str(task.get("due") or ""),
+        "priority": str(task.get("priority") or ""),
+        "project": str(task.get("project") or ""),
+        "course": str(task.get("course") or ""),
+    }
 
 
 def _archive_change(config: dict[str, Any], text: str) -> None:

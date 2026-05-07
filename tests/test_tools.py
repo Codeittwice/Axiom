@@ -68,6 +68,14 @@ class Phase6AdvancedToolsTest(unittest.TestCase):
         finally:
             tools._REPOS = original_repos
 
+    def test_website_alias_resolves_spoken_wizz_air(self):
+        self.assertEqual(tools._resolve_website("with air")[1], "https://wizzair.com")
+        self.assertEqual(tools._resolve_website("gmail")[1], tools._WEBSITES["email"])
+
+    def test_axiom_self_improvement_tasks_default_high_priority(self):
+        self.assertEqual(tools._default_task_priority("train the wake word model"), "high")
+        self.assertEqual(tools._default_task_priority("buy milk"), "")
+
 
 if __name__ == "__main__":
     unittest.main()

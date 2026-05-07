@@ -33,6 +33,7 @@ app      = Flask(__name__)
 app.config["SECRET_KEY"] = "axiom-local-secret"
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _config_lock = threading.Lock()
+_system_ready = False
 
 
 def emit(event: str, data: dict):
@@ -422,7 +423,7 @@ def api_suggestions():
     p = Path("data/suggestions.json")
     if not p.exists():
         return jsonify({"items": []})
-    with open(p, encoding="utf-8") as f:
+    with open(p, encoding="utf-8-sig") as f:
         items = json.load(f)
     if isinstance(items, dict):
         items = items.get("items", [])
@@ -438,7 +439,7 @@ def api_approve_suggestion(suggestion_id: str):
     p = Path("data/suggestions.json")
     if not p.exists():
         return jsonify({"error": "No suggestions file"}), 404
-    with open(p, encoding="utf-8") as f:
+    with open(p, encoding="utf-8-sig") as f:
         items = json.load(f)
     if isinstance(items, dict):
         items = items.get("items", [])
@@ -458,23 +459,20 @@ def api_approve_suggestion(suggestion_id: str):
 
 @app.route("/api/suggestions/<suggestion_id>/reject", methods=["POST"])
 def api_reject_suggestion(suggestion_id: str):
-    import json
-    p = Path("data/suggestions.json")
-    if not p.exists():
-        return jsonify({"error": "No suggestions file"}), 404
-    with open(p, encoding="utf-8") as f:
-        items = json.load(f)
-    if isinstance(items, dict):
-        items = items.get("items", [])
-    for s in items:
-        if s.get("id") == suggestion_id:
-            s["status"] = "rejected"
-            break
-    else:
-        return jsonify({"error": "Not found"}), 404
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(items, f, indent=2, ensure_ascii=False)
+    ok, response = _set_suggestion_status(suggestion_id, "rejected")
+    if not ok:
+        return response
     _update_user_model_approval(suggestion_id, approved=False)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/suggestions/<suggestion_id>/implemented", methods=["POST"])
+def api_implement_suggestion(suggestion_id: str):
+    ok, response = _set_suggestion_status(suggestion_id, "implemented")
+    if not ok:
+        return response
+    _update_user_model_implemented(suggestion_id)
+    socketio.emit("suggestions_updated", {"count": 0})
     return jsonify({"ok": True})
 
 
@@ -484,7 +482,7 @@ def api_user_model():
     p = Path("data/user_model.json")
     if not p.exists():
         return jsonify({})
-    with open(p, encoding="utf-8") as f:
+    with open(p, encoding="utf-8-sig") as f:
         return jsonify(json.load(f))
 
 
@@ -504,6 +502,8 @@ def api_skill_registry():
 def on_connect():
     emit("state", {"state": "idle"})
     emit("log",   {"level": "system", "text": f"AXIOM online - press {CFG['assistant']['hotkey'].upper()} to speak."})
+    if _system_ready:
+        emit("system_ready", {})
 
 
 # ─── Self-learning helpers ────────────────────────────────────────────────────
@@ -526,12 +526,18 @@ def _check_auto_reflect(cfg: dict) -> None:
 def _run_reflection_bg() -> None:
     try:
         from reflection import run_reflection
+        emit("log", {"level": "system", "text": "Reflection started..."})
         suggestions = run_reflection(CFG)
         if suggestions:
             emit("log", {"level": "system", "text": f"Reflection complete: {len(suggestions)} new suggestion(s)."})
             socketio.emit("suggestions_updated", {"count": len(suggestions)})
+        else:
+            emit("log", {"level": "system", "text": "Reflection: no new suggestions (no new sessions or all already processed)."})
     except Exception as e:
-        print(f"[AXIOM] Reflection error: {e}")
+        import traceback
+        msg = traceback.format_exc()
+        print(f"[AXIOM] Reflection error:\n{msg}")
+        emit("log", {"level": "error", "text": f"Reflection failed: {e}"})
 
 
 def _update_user_model_approval(suggestion_id: str, approved: bool) -> None:
@@ -539,7 +545,7 @@ def _update_user_model_approval(suggestion_id: str, approved: bool) -> None:
     p = Path("data/user_model.json")
     model: dict = {}
     if p.exists():
-        with open(p, encoding="utf-8") as f:
+        with open(p, encoding="utf-8-sig") as f:
             model = json.load(f)
     key = "approved_suggestions" if approved else "rejected_suggestions"
     lst = model.setdefault(key, [])
@@ -553,7 +559,49 @@ def _update_user_model_approval(suggestion_id: str, approved: bool) -> None:
 
 # ─── Assistant loop ───────────────────────────────────────────────────────────
 
+def _set_suggestion_status(suggestion_id: str, status: str):
+    import json
+    p = Path("data/suggestions.json")
+    if not p.exists():
+        return False, (jsonify({"error": "No suggestions file"}), 404)
+    with open(p, encoding="utf-8-sig") as f:
+        items = json.load(f)
+    if isinstance(items, dict):
+        items = items.get("items", [])
+    for suggestion in items:
+        if suggestion.get("id") == suggestion_id:
+            suggestion["status"] = status
+            if status == "implemented":
+                suggestion["implemented_at"] = datetime.now().isoformat()
+            break
+    else:
+        return False, (jsonify({"error": "Not found"}), 404)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(items, f, indent=2, ensure_ascii=False)
+    return True, None
+
+
+def _update_user_model_implemented(suggestion_id: str) -> None:
+    import json
+    p = Path("data/user_model.json")
+    model: dict = {}
+    if p.exists():
+        with open(p, encoding="utf-8-sig") as f:
+            model = json.load(f)
+    approved = model.setdefault("approved_suggestions", [])
+    if suggestion_id not in approved:
+        approved.append(suggestion_id)
+    implemented = model.setdefault("implemented_suggestions", [])
+    if suggestion_id not in implemented:
+        implemented.append(suggestion_id)
+    model["last_updated"] = datetime.now().isoformat()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(model, f, indent=2, ensure_ascii=False)
+
+
 def assistant_loop():
+    global _system_ready
     from voice_assistant import (
         ASSISTANT_NAME,
         ask_ai,
@@ -594,6 +642,7 @@ def assistant_loop():
     print(f"\n[AXIOM] Ready — press {hotkey.upper()} to speak, ESC to quit.\n")
     emit("log", {"level": "system", "text": f"Ready - press {hotkey.upper()} or say the wake word."})
     emit("state", {"state": "idle"})
+    _system_ready = True
     emit("system_ready", {})
 
     # Greet the user using the real TTS voice

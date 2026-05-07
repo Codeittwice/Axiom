@@ -13,6 +13,7 @@ import os
 import subprocess
 import webbrowser
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import yaml
@@ -71,7 +72,7 @@ GEMINI_TOOLS = [{
         # ── Web & Info ──────────────────────────────────────────────────────
         {
             "name": "search_web",
-            "description": "Search the web for current information, news, facts, or live data not in training data.",
+            "description": "Search the web for current information, prices, travel costs, current events, news, recent facts, live data, or any general question that may require up-to-date information. Prefer this over guessing.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -130,7 +131,7 @@ GEMINI_TOOLS = [{
         },
         {
             "name": "open_website",
-            "description": "Open a website or named shortcut in the default browser. Use for 'open GitHub', 'open my email', or any URL.",
+            "description": "Open a website or named shortcut in the default browser. Supports configured shortcuts, aliases, and fuzzy spoken names. Use for 'open GitHub', 'open my email', or any URL.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -612,8 +613,40 @@ GEMINI_TOOLS = [{
             }
         },
         {
+            "name": "edit_task",
+            "description": "Edit an existing Obsidian task by matching part of its text. Can change text, priority, due date, project, or course.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Text to match against the open task"},
+                    "text": {"type": "string", "description": "Optional replacement task text"},
+                    "due": {"type": "string", "description": "Optional new due date as YYYY-MM-DD, or empty to clear"},
+                    "priority": {"type": "string", "description": "Optional priority: low, medium, high, or empty to clear"},
+                    "project": {"type": "string", "description": "Optional project metadata, or empty to clear"},
+                    "course": {"type": "string", "description": "Optional course metadata, or empty to clear"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "delete_task",
+            "description": "Delete an existing Obsidian task by matching part of its text. Use only when the user clearly asks to delete or remove a task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Text to match against the open task"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
             "name": "obsidian_status",
             "description": "Check the configured Obsidian vault and open task count.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "check_axiom_status",
+            "description": "Report AXIOM's system health: wake word config, Obsidian tasks, Calendar, Gmail, Spotify, project status, and learning suggestion counts.",
             "parameters": {"type": "object", "properties": {}}
         },
         {
@@ -751,11 +784,65 @@ def open_application(app_name: str) -> str:
 
 
 def open_website(target: str) -> str:
-    url = _WEBSITES.get(target.lower().strip(), target)
+    resolved_name, url = _resolve_website(target)
     if not url.startswith("http"):
         url = "https://" + url
     webbrowser.open(url)
-    return f"Opened {target}."
+    return f"Opened {resolved_name}."
+
+
+def _resolve_website(target: str) -> tuple[str, str]:
+    raw = (target or "").strip()
+    key = _normalize_lookup(raw)
+    websites = {str(k): str(v) for k, v in (_WEBSITES or {}).items()}
+    aliases = _website_aliases()
+
+    if key in aliases:
+        alias_target = aliases[key]
+        return alias_target, websites.get(alias_target, alias_target)
+    if key in websites:
+        return key, websites[key]
+    if raw.startswith(("http://", "https://")) or "." in raw:
+        return raw, raw
+
+    candidates = {**{_normalize_lookup(k): k for k in websites}, **{k: v for k, v in aliases.items()}}
+    best_key = ""
+    best_score = 0.0
+    for candidate in candidates:
+        score = SequenceMatcher(None, key, candidate).ratio()
+        if key in candidate or candidate in key:
+            score += 0.2
+        if score > best_score:
+            best_key = candidate
+            best_score = score
+
+    if best_key and best_score >= 0.72:
+        resolved = candidates[best_key]
+        return resolved, websites.get(resolved, resolved)
+    return raw, raw
+
+
+def _website_aliases() -> dict[str, str]:
+    aliases = {
+        "mail": "email",
+        "gmail": "email",
+        "google mail": "email",
+        "google calendar": "calendar",
+        "open ai": "chatgpt",
+        "chat gpt": "chatgpt",
+        "wizz air": "https://wizzair.com",
+        "wizz": "https://wizzair.com",
+        "with air": "https://wizzair.com",
+        "wiz air": "https://wizzair.com",
+    }
+    configured = _CFG.get("website_aliases", {}) or {}
+    for alias, target in configured.items():
+        aliases[str(alias)] = str(target)
+    return {_normalize_lookup(alias): target for alias, target in aliases.items()}
+
+
+def _normalize_lookup(value: str) -> str:
+    return " ".join(str(value).lower().replace("_", " ").replace("-", " ").split())
 
 
 def run_scenario(scenario_name: str, project_name: str = "") -> str:
@@ -1507,9 +1594,11 @@ def _format_tasks_for_voice(tasks: list[dict], empty: str) -> str:
 
 def capture_task(text: str, due: str = "", priority: str = "", project: str = "", course: str = "") -> str:
     import obsidian_tasks
+    priority = priority or _default_task_priority(text)
     task = obsidian_tasks.capture_task(_CFG, text, due, priority, project, course)
     due_part = f" due {task['due']}" if task.get("due") else ""
-    return f"Captured task: {task['text']}{due_part}."
+    priority_part = f" with {task['priority']} priority" if task.get("priority") else ""
+    return f"Captured task: {task['text']}{due_part}{priority_part}."
 
 
 def today_tasks() -> str:
@@ -1539,10 +1628,93 @@ def reschedule_task(query: str, due: str) -> str:
     return f"Rescheduled: {updated['text']} to {updated['due']}."
 
 
+def edit_task(
+    query: str,
+    text: str = "",
+    due: str | None = None,
+    priority: str | None = None,
+    project: str | None = None,
+    course: str | None = None,
+) -> str:
+    import obsidian_tasks
+    task = obsidian_tasks.find_task_by_query(_CFG, query)
+    updated = obsidian_tasks.update_task(_CFG, task["id"], text, due, priority, project, course)
+    details = []
+    if updated.get("due"):
+        details.append(f"due {updated['due']}")
+    if updated.get("priority"):
+        details.append(f"{updated['priority']} priority")
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"Updated task: {updated['text']}{suffix}."
+
+
+def delete_task(query: str) -> str:
+    import obsidian_tasks
+    task = obsidian_tasks.find_task_by_query(_CFG, query)
+    deleted = obsidian_tasks.delete_task(_CFG, task["id"])
+    return f"Deleted task: {deleted['text']}."
+
+
+def _default_task_priority(text: str) -> str:
+    lowered = (text or "").lower()
+    self_improvement_terms = (
+        "wake word",
+        "wakeword",
+        "train wake",
+        "training wake",
+        "axiom",
+        "voice assistant",
+    )
+    if any(term in lowered for term in self_improvement_terms):
+        return "high"
+    return ""
+
+
 def obsidian_status() -> str:
     import obsidian_tasks
     status = obsidian_tasks.status(_CFG)
     return f"Obsidian vault is {status['vault']}. {status['open']} open tasks, {status['due_today']} due today."
+
+
+def check_axiom_status() -> str:
+    config = _refresh_config_from_disk()
+    wake = config.get("wake_word", {}) or {}
+    parts = [
+        f"Wake word is {'enabled' if wake.get('enabled') else 'disabled'}"
+        + (f" using {wake.get('model')}" if wake.get("model") else "")
+        + f" at threshold {wake.get('threshold', 'unknown')}",
+        obsidian_status(),
+        calendar_status(),
+        gmail_status(),
+        spotify_status(),
+        _suggestions_status(),
+    ]
+    try:
+        if _project_registry is not None:
+            active = _project_registry.get_active()
+            if active:
+                parts.append("Active project: " + _project_registry.status(active))
+    except Exception as e:
+        parts.append(f"Project status unavailable: {e}")
+    return " ".join(part.rstrip(".") + "." for part in parts if part)
+
+
+def _suggestions_status() -> str:
+    try:
+        path = Path("data/suggestions.json")
+        if not path.exists():
+            return "Learning suggestions: none yet."
+        items = json.loads(path.read_text(encoding="utf-8-sig"))
+        if isinstance(items, dict):
+            items = items.get("items", [])
+        counts: dict[str, int] = {}
+        for item in items:
+            status = str(item.get("status") or "pending")
+            counts[status] = counts.get(status, 0) + 1
+        summary = ", ".join(f"{count} {status}" for status, count in sorted(counts.items()))
+        return f"Learning suggestions: {summary or 'none'}."
+    except Exception as e:
+        return f"Learning suggestions unavailable: {e}"
 
 
 # ── System ────────────────────────────────────────────────────────────────────
@@ -1665,7 +1837,10 @@ def execute_tool(name: str, inputs: dict) -> str:
         "upcoming_tasks":   lambda i: upcoming_tasks(int(i.get("days", 7))),
         "complete_task":    lambda i: complete_task(i["query"]),
         "reschedule_task":  lambda i: reschedule_task(i["query"], i["due"]),
+        "edit_task":        lambda i: edit_task(i["query"], i.get("text", ""), i.get("due"), i.get("priority"), i.get("project"), i.get("course")),
+        "delete_task":      lambda i: delete_task(i["query"]),
         "obsidian_status":  lambda i: obsidian_status(),
+        "check_axiom_status": lambda i: check_axiom_status(),
         "set_volume":       lambda i: set_volume(int(i["level"])),
         "set_timer":        lambda i: set_timer(float(i["minutes"]), i.get("label", "Timer")),
         "read_clipboard":   lambda i: read_clipboard(),

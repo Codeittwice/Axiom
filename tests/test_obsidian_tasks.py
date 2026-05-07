@@ -76,6 +76,37 @@ class ObsidianTasksTest(unittest.TestCase):
 
             self.assertEqual(tasks[0]["text"].split(" due::")[0], "High later task")
 
+    def test_update_task_edits_text_priority_and_due_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = cfg(tmp)
+            task = obsidian_tasks.capture_task(config, "Train wake word", "2026-05-09", "low")
+
+            updated = obsidian_tasks.update_task(
+                config,
+                task["id"],
+                text="Train AXIOM wake word model",
+                due="2026-05-10",
+                priority="high",
+            )
+
+            self.assertEqual(updated["text"].split(" due::")[0], "Train AXIOM wake word model")
+            self.assertEqual(updated["due"], "2026-05-10")
+            self.assertEqual(updated["priority"], "high")
+            inbox = Path(tmp) / "AXIOM Inbox.md"
+            self.assertIn("priority:: high", inbox.read_text(encoding="utf-8"))
+
+    def test_delete_task_removes_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = cfg(tmp)
+            first = obsidian_tasks.capture_task(config, "Keep this")
+            second = obsidian_tasks.capture_task(config, "Remove this")
+
+            deleted = obsidian_tasks.delete_task(config, second["id"])
+
+            self.assertEqual(deleted["text"], "Remove this")
+            remaining = obsidian_tasks.scan_tasks(config, status="open")
+            self.assertEqual([task["text"] for task in remaining], [first["text"]])
+
 
 if __name__ == "__main__":
     unittest.main()

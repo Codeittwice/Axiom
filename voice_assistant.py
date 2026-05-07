@@ -293,9 +293,12 @@ def _system_prompt() -> str:
         "Avoid markdown, bullet points, and long lists unless the user specifically asks. "
         "Tool use rules: "
         "ALWAYS call search_web for any question about prices, travel costs, current events, news, "
-        "real-time facts, or anything you cannot answer with certainty from training data — never guess. "
+        "real-time facts, live availability, recent product details, or anything you cannot answer with certainty from training data — never guess. "
+        "For broad factual questions such as 'what is', 'how much', 'tell me about', or 'how does this work', use search_web when freshness or accuracy could matter. "
         "Call get_weather for weather questions. "
         "Call today_schedule or next_event for calendar questions. "
+        "Call edit_task or delete_task when the user asks to edit, change, reprioritize, remove, or delete an Obsidian task. "
+        "Call check_axiom_status when the user asks about AXIOM's status, health, setup, integrations, or wake-word configuration. "
         "Call get_last_commit_message when asked about the latest commit or recent changes. "
         "Call remember_preference when the user says 'remember that', 'I prefer', 'I always', 'I never', 'I like', 'I hate', 'I want', or 'from now on' — save it to memory first, then acknowledge. "
         "Call recall_memory when the user says 'do you remember', 'what did I say about', 'have I told you', or asks about a past preference or conversation. "
@@ -331,9 +334,13 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     has_obsidian = "obsidian" in text or "vault" in text
     has_spotify = "spotify" in text or "music" in text or "song" in text or "track" in text
     has_task = "task" in text or "todo" in text or "to do" in text or "remind me" in text
+    has_axiom = "axiom" in text or "assistant" in text or "voice assistant" in text
     config_words = ("config", "setting", "enabled", "disabled", "true", "false", "check")
     email_status_words = ("config", "setting", "enabled", "disabled", "true", "false", "status")
+    search_starters = ("what is", "what are", "who is", "how much", "how many", "tell me about", "look up", "search for")
 
+    if has_axiom and any(word in text for word in ("status", "health", "setup", "configured", "configuration", "wake word", "integrations")):
+        return "check_axiom_status", {}
     if has_obsidian and (
         "workflow" in text
         or "plan" in text
@@ -348,6 +355,16 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
         return "today_tasks", {}
     if has_task and ("upcoming" in text or "this week" in text or "next week" in text):
         return "upcoming_tasks", {"days": 7}
+    if has_task and (
+        "delete" in text
+        or "remove" in text
+        or "edit" in text
+        or "change" in text
+        or "update" in text
+        or "priority" in text
+        or "weight" in text
+    ):
+        return None
     if has_calendar and any(word in text for word in config_words):
         return "calendar_status", {}
     if has_email and ("connect" in text or "authorize" in text or "authorise" in text or "consent" in text):
@@ -399,6 +416,23 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
         return "today_schedule", {}
     if ("next" in text or "upcoming" in text) and ("meeting" in text or "event" in text or "calendar" in text):
         return "next_event", {}
+    if any(text.startswith(prefix) for prefix in search_starters) and not any(
+        marker in text
+        for marker in (
+            "weather",
+            "calendar",
+            "schedule",
+            "email",
+            "gmail",
+            "spotify",
+            "task",
+            "todo",
+            "repo",
+            "project status",
+            "remember",
+        )
+    ):
+        return "search_web", {"query": user_text}
     return None
 
 
@@ -946,6 +980,8 @@ def _oww_listener():
     Sets _wake_event when the wake word is detected.
     """
     try:
+        import warnings
+        warnings.filterwarnings("ignore", message=".*pkg_resources.*")
         import openwakeword
         from openwakeword.model import Model as OWWModel
 

@@ -56,6 +56,20 @@
         gap: 1.25rem;
         position: relative;
       }
+      body.content-narrow .view:not(#view-live) {
+        width: 100%;
+        max-width: 720px;
+        align-self: center;
+        gap: 1.5rem;
+      }
+      body.content-narrow {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      body.content-narrow::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+      }
       body.electron {
         padding-top: 0.75rem;
       }
@@ -1001,6 +1015,28 @@
         letter-spacing: 0.12em;
         margin: 1rem 0 0.4rem;
       }
+      .learn-section {
+        border-top: 1px solid var(--border2);
+        padding-top: 0.85rem;
+        margin-top: 0.85rem;
+      }
+      .learn-section summary {
+        cursor: pointer;
+        list-style: none;
+      }
+      .learn-section summary::-webkit-details-marker {
+        display: none;
+      }
+      .learn-section summary .learn-section-label {
+        margin: 0 0 0.75rem;
+      }
+      .learn-section summary .learn-section-label::before {
+        content: "[+] ";
+        color: var(--accent);
+      }
+      .learn-section[open] summary .learn-section-label::before {
+        content: "[-] ";
+      }
       .suggestion-card {
         background: var(--panel);
         border: 1px solid var(--border2);
@@ -1009,6 +1045,7 @@
         margin-bottom: 0.75rem;
       }
       .suggestion-card.approved { border-color: var(--green); }
+      .suggestion-card.implemented { border-color: var(--accent); opacity: 0.82; }
       .suggestion-card.rejected { opacity: 0.45; }
       .suggestion-title {
         font-size: 0.9rem;
@@ -1401,14 +1438,24 @@
             <button class="cmd-btn primary" id="runReflectBtn">Run Reflection</button>
             <button class="cmd-btn" id="refreshLearnBtn">Refresh</button>
           </div>
-          <div class="learn-section-label">// PENDING SUGGESTIONS</div>
-          <div id="suggestionsList">
-            <div class="widget-empty">No pending suggestions. Run reflection to generate some.</div>
-          </div>
-          <div class="learn-section-label">// APPROVED</div>
-          <div id="approvedList">
-            <div class="widget-empty">Nothing approved yet.</div>
-          </div>
+          <details class="learn-section" open>
+            <summary><div class="learn-section-label">// PENDING SUGGESTIONS</div></summary>
+            <div id="suggestionsList">
+              <div class="widget-empty">No pending suggestions. Run reflection to generate some.</div>
+            </div>
+          </details>
+          <details class="learn-section" open>
+            <summary><div class="learn-section-label">// APPROVED</div></summary>
+            <div id="approvedList">
+              <div class="widget-empty">Nothing approved yet.</div>
+            </div>
+          </details>
+          <details class="learn-section">
+            <summary><div class="learn-section-label">// IMPLEMENTED</div></summary>
+            <div id="implementedList">
+              <div class="widget-empty">Nothing implemented yet.</div>
+            </div>
+          </details>
         </div>
       </section>
     </div>
@@ -1570,6 +1617,7 @@
 
       function setWidgetMode(tab) {
         document.body.classList.toggle("with-widgets", tab === "live");
+        document.body.classList.toggle("content-narrow", tab !== "live");
         if (tab === "live")
           loadDashboard().catch((e) =>
             renderWidget("w-schedule", "Schedule", [], e.message),
@@ -2266,12 +2314,16 @@
       function renderSuggestions(items) {
         const pending = items.filter((s) => s.status === "pending");
         const approved = items.filter((s) => s.status === "approved");
+        const implemented = items.filter((s) => s.status === "implemented");
         document.getElementById("suggestionsList").innerHTML = pending.length
           ? pending.map(renderCard).join("")
           : '<div class="widget-empty">No pending suggestions. Run reflection to generate some.</div>';
         document.getElementById("approvedList").innerHTML = approved.length
           ? approved.map(renderCard).join("")
           : '<div class="widget-empty">Nothing approved yet.</div>';
+        document.getElementById("implementedList").innerHTML = implemented.length
+          ? implemented.map(renderCard).join("")
+          : '<div class="widget-empty">Nothing implemented yet.</div>';
       }
 
       function renderCard(s) {
@@ -2279,6 +2331,7 @@
         const files = (s.proposal?.files_to_modify || []).join(", ");
         const evidence = (s.evidence || []).map(escHtml).join(" · ");
         const isPending = s.status === "pending";
+        const isApproved = s.status === "approved";
         return `
           <div class="suggestion-card ${s.status}" id="card-${s.id}">
             <div class="suggestion-title">${escHtml(s.title)}</div>
@@ -2295,6 +2348,10 @@
                 <button class="cmd-btn primary" onclick="approveSuggestion('${s.id}')">Approve</button>
                 <button class="cmd-btn warn" onclick="rejectSuggestion('${s.id}')">Reject</button>
               </div>` : ""}
+            ${isApproved ? `
+              <div class="btn-row" style="margin-top:.5rem">
+                <button class="cmd-btn primary" onclick="markSuggestionImplemented('${s.id}')">Mark Implemented</button>
+              </div>` : ""}
           </div>`;
       }
 
@@ -2308,6 +2365,12 @@
         await api(`/api/suggestions/${id}/reject`, { method: "POST", body: JSON.stringify({}) });
         await loadLearn();
         toast("learnToast", "Rejected");
+      }
+
+      async function markSuggestionImplemented(id) {
+        await api(`/api/suggestions/${id}/implemented`, { method: "POST", body: JSON.stringify({}) });
+        await loadLearn();
+        toast("learnToast", "Implemented");
       }
 
       async function runReflection() {
