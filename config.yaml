@@ -214,3 +214,13 @@ scenarios:
         command: "status"
       - action: speak
         text: "Logged. See you tomorrow."
+
+
+# ─── Self-learning ────────────────────────────────────────────────────────────
+learning:
+  reflection_enabled: true
+  auto_reflect_after_sessions: 10   # trigger reflection every N sessions
+  reflection_window_days: 7         # how many days of logs to read per reflection
+  session_logs_dir: data/session_logs
+  user_model_file: data/user_model.json
+  suggestions_file: data/suggestions.json

@@ -841,6 +841,89 @@
         );
         pointer-events: none;
       }
+
+      /* ── Learn tab ─────────────────────────────────────────────────────────── */
+      .learn-model-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border2);
+        margin-bottom: 1rem;
+      }
+      .learn-chip {
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.65rem;
+        color: var(--accent);
+        border: 1px solid var(--border2);
+        padding: 0.2rem 0.6rem;
+        border-radius: 2px;
+        background: var(--dim);
+        letter-spacing: 0.06em;
+      }
+      .learn-section-label {
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.12em;
+        margin: 1rem 0 0.4rem;
+      }
+      .suggestion-card {
+        background: var(--panel);
+        border: 1px solid var(--border2);
+        border-radius: 2px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+      }
+      .suggestion-card.approved { border-color: var(--green); }
+      .suggestion-card.rejected { opacity: 0.45; }
+      .suggestion-title {
+        font-size: 0.9rem;
+        color: var(--text);
+        font-weight: 500;
+        margin-bottom: 0.3rem;
+      }
+      .suggestion-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin-bottom: 0.5rem;
+      }
+      .complexity-badge {
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.58rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 1px;
+        border: 1px solid var(--muted);
+        color: var(--muted);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .complexity-badge.trivial { border-color: var(--green); color: var(--green); }
+      .complexity-badge.low     { border-color: var(--accent); color: var(--accent); }
+      .complexity-badge.medium  { border-color: var(--warn); color: var(--warn); }
+      .complexity-badge.high    { border-color: var(--red); color: var(--red); }
+      .suggestion-reasoning {
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin-bottom: 0.5rem;
+        line-height: 1.5;
+      }
+      .suggestion-proposal {
+        font-size: 0.75rem;
+        color: var(--text);
+        background: var(--dim);
+        padding: 0.4rem 0.6rem;
+        border-radius: 2px;
+        margin-bottom: 0.6rem;
+      }
+      .suggestion-evidence {
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.62rem;
+        color: var(--muted);
+        margin-bottom: 0.6rem;
+      }
     </style>
   </head>
   <body>
@@ -877,6 +960,7 @@
         <button class="tab-btn" data-tab="scenarios">Scenarios</button>
         <button class="tab-btn" data-tab="settings">Settings</button>
         <button class="tab-btn" data-tab="history">History</button>
+        <button class="tab-btn" data-tab="learn">Learn</button>
       </div>
 
       <section class="view active" id="view-live">
@@ -1116,6 +1200,29 @@
             <button class="cmd-btn" id="refreshHistoryBtn">Refresh</button>
           </div>
           <div class="data-list" id="historyList"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-learn">
+        <div class="ops-panel">
+          <div class="ops-head">
+            <span>// INTELLIGENCE</span><span class="toast" id="learnToast"></span>
+          </div>
+          <div class="learn-model-strip" id="learnModelStrip">
+            <span class="widget-empty">No user model yet — run a few sessions first.</span>
+          </div>
+          <div class="btn-row">
+            <button class="cmd-btn primary" id="runReflectBtn">Run Reflection</button>
+            <button class="cmd-btn" id="refreshLearnBtn">Refresh</button>
+          </div>
+          <div class="learn-section-label">// PENDING SUGGESTIONS</div>
+          <div id="suggestionsList">
+            <div class="widget-empty">No pending suggestions. Run reflection to generate some.</div>
+          </div>
+          <div class="learn-section-label">// APPROVED</div>
+          <div id="approvedList">
+            <div class="widget-empty">Nothing approved yet.</div>
+          </div>
         </div>
       </section>
     </div>
@@ -1607,6 +1714,7 @@
             .classList.add("active");
           setWidgetMode(btn.dataset.tab);
           if (btn.dataset.tab === "history") await loadHistory();
+          if (btn.dataset.tab === "learn") await loadLearn();
         });
       });
 
@@ -1706,6 +1814,98 @@
         addLog("error", data.message || data.text || "Unknown error");
         setState("idle");
       });
+
+      socket.on("suggestions_updated", (data) => {
+        if (document.getElementById("view-learn").classList.contains("active"))
+          loadLearn().catch(() => {});
+        addLog("system", `Reflection complete: ${data.count} new suggestion(s).`);
+      });
+
+      // ── Learn tab ───────────────────────────────────────────────────────────
+      async function loadLearn() {
+        const [suggestionsData, modelData] = await Promise.all([
+          api("/api/suggestions"),
+          api("/api/user-model"),
+        ]);
+        renderUserModel(modelData);
+        renderSuggestions(suggestionsData.items || []);
+      }
+
+      function renderUserModel(model) {
+        const strip = document.getElementById("learnModelStrip");
+        if (!model || !Object.keys(model).length) {
+          strip.innerHTML = '<span class="widget-empty">No user model yet — run a few sessions first.</span>';
+          return;
+        }
+        const chips = [];
+        if (model.session_count) chips.push(`SESSIONS: ${model.session_count}`);
+        if (model.delegation_threshold) chips.push(`TRUST: ${model.delegation_threshold.toUpperCase()}`);
+        const topDomain = Object.entries(model.frequent_domains || {}).sort(([, a], [, b]) => b - a)[0];
+        if (topDomain) chips.push(`TOP TOOL: ${topDomain[0]}`);
+        const topHour = Object.entries(model.working_hours || {}).sort(([, a], [, b]) => b - a)[0];
+        if (topHour) chips.push(`PEAK HOUR: ${topHour[0]}:00`);
+        if (model.last_updated) chips.push(`UPDATED: ${new Date(model.last_updated).toLocaleDateString()}`);
+        strip.innerHTML = chips.map((c) => `<span class="learn-chip">${escHtml(c)}</span>`).join("");
+      }
+
+      function renderSuggestions(items) {
+        const pending = items.filter((s) => s.status === "pending");
+        const approved = items.filter((s) => s.status === "approved");
+        document.getElementById("suggestionsList").innerHTML = pending.length
+          ? pending.map(renderCard).join("")
+          : '<div class="widget-empty">No pending suggestions. Run reflection to generate some.</div>';
+        document.getElementById("approvedList").innerHTML = approved.length
+          ? approved.map(renderCard).join("")
+          : '<div class="widget-empty">Nothing approved yet.</div>';
+      }
+
+      function renderCard(s) {
+        const complexity = s.proposal?.estimated_complexity || "low";
+        const files = (s.proposal?.files_to_modify || []).join(", ");
+        const evidence = (s.evidence || []).map(escHtml).join(" · ");
+        const isPending = s.status === "pending";
+        return `
+          <div class="suggestion-card ${s.status}" id="card-${s.id}">
+            <div class="suggestion-title">${escHtml(s.title)}</div>
+            <div class="suggestion-meta">
+              <span class="complexity-badge ${complexity}">${complexity}</span>
+              <span style="font-family:monospace;font-size:.6rem;color:var(--muted)">${escHtml(s.type || "")}</span>
+              ${files ? `<span style="font-family:monospace;font-size:.6rem;color:var(--muted)">${escHtml(files)}</span>` : ""}
+            </div>
+            ${s.reasoning ? `<div class="suggestion-reasoning">${escHtml(s.reasoning)}</div>` : ""}
+            ${s.proposal?.description ? `<div class="suggestion-proposal">${escHtml(s.proposal.description)}</div>` : ""}
+            ${evidence ? `<div class="suggestion-evidence">Evidence: ${evidence}</div>` : ""}
+            ${isPending ? `
+              <div class="btn-row" style="margin-top:.5rem">
+                <button class="cmd-btn primary" onclick="approveSuggestion('${s.id}')">Approve</button>
+                <button class="cmd-btn warn" onclick="rejectSuggestion('${s.id}')">Reject</button>
+              </div>` : ""}
+          </div>`;
+      }
+
+      async function approveSuggestion(id) {
+        await api(`/api/suggestions/${id}/approve`, { method: "POST", body: JSON.stringify({}) });
+        await loadLearn();
+        toast("learnToast", "Approved");
+      }
+
+      async function rejectSuggestion(id) {
+        await api(`/api/suggestions/${id}/reject`, { method: "POST", body: JSON.stringify({}) });
+        await loadLearn();
+        toast("learnToast", "Rejected");
+      }
+
+      async function runReflection() {
+        toast("learnToast", "Running reflection…");
+        await api("/api/reflect", { method: "POST", body: JSON.stringify({}) });
+        toast("learnToast", "Reflection started");
+        setTimeout(() => loadLearn().catch(() => {}), 3000);
+      }
+
+      document.getElementById("runReflectBtn").onclick = () =>
+        runReflection().catch((e) => toast("learnToast", e.message));
+      document.getElementById("refreshLearnBtn").onclick = () =>
+        loadLearn().catch((e) => toast("learnToast", e.message));
     </script>
   </body>
 </html>
