@@ -236,29 +236,71 @@
     '> ALL SYSTEMS NOMINAL',
   ];
 
-  const logInner   = document.getElementById('logInner');
-  const fill       = document.getElementById('progressFill');
-  const label      = document.getElementById('progressLabel');
+  // ── Audio synthesis ────────────────────────────────────────────────────────
+  const _ac = new (window.AudioContext || window.webkitAudioContext)();
+
+  function _sine(freq, startT, peak, dur) {
+    const o = _ac.createOscillator();
+    const g = _ac.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, startT);
+    g.gain.linearRampToValueAtTime(peak, startT + 0.07);
+    g.gain.exponentialRampToValueAtTime(0.001, startT + dur);
+    o.connect(g); g.connect(_ac.destination);
+    o.start(startT); o.stop(startT + dur + 0.05);
+  }
+
+  // Ambient arpeggio — Am7 notes cycling softly throughout boot
+  const _AMBIENT = [220, 261.63, 329.63, 392.00, 440.00, 329.63]; // A3 C4 E4 G4 A4 E4
+  let _ambIdx = 0, _ambTimer = null;
+
+  function _ambientTick() {
+    _sine(_AMBIENT[_ambIdx % _AMBIENT.length], _ac.currentTime, 0.045, 2.8);
+    _ambIdx++;
+  }
+  function startAmbient(intervalMs = 1800) {
+    _ambientTick();
+    _ambTimer = setInterval(_ambientTick, intervalMs);
+  }
+  function stopAmbient() {
+    if (_ambTimer) { clearInterval(_ambTimer); _ambTimer = null; }
+  }
+
+  // Ready chime — C5 E5 G5 major triad, warm long decay
+  function playReadyChime() {
+    stopAmbient();
+    const t = _ac.currentTime;
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      const s = t + i * 0.16;
+      _sine(freq,     s, 0.13, 2.4);
+      _sine(freq * 2, s, 0.04, 1.3);
+    });
+  }
+
+  // ── Boot sequence ──────────────────────────────────────────────────────────
+  const logInner = document.getElementById('logInner');
+  const fill     = document.getElementById('progressFill');
+  const label    = document.getElementById('progressLabel');
 
   let lineIdx = 0;
-  const totalDuration = 12000; // ms — progress reaches ~90% over this
+  const totalDuration = 12000;
   const startTime = Date.now();
 
   function addLine() {
     if (lineIdx >= LINES.length) return;
-
-    // Mark previous active → done
     const prev = logInner.querySelector('.active');
     if (prev) prev.classList.replace('active', 'done');
-
     const el = document.createElement('div');
     el.className = 'log-line active';
-    el.textContent = LINES[lineIdx++];
+    el.textContent = LINES[lineIdx];
     logInner.insertBefore(el, logInner.firstChild);
-
-    // Keep only last 5 visible
-    while (logInner.children.length > 5) {
-      logInner.removeChild(logInner.lastChild);
+    while (logInner.children.length > 5) logInner.removeChild(logInner.lastChild);
+    lineIdx++;
+    if (lineIdx >= LINES.length) {
+      setTimeout(() => {
+        playReadyChime();
+        speak('Systems online. Ready when you are, ' + USER_NAME + '.', 500);
+      }, 200);
     }
   }
 
@@ -269,9 +311,9 @@
     label.textContent = pct + '%';
   }
 
-  // Kick off first line immediately
+  // ── Kick off ───────────────────────────────────────────────────────────────
+  startAmbient(1900);
   addLine();
-
   const lineInterval = setInterval(() => {
     addLine();
     if (lineIdx >= LINES.length) clearInterval(lineInterval);

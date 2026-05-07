@@ -2046,8 +2046,20 @@
         toast("historyToast", `${data.total} turns`);
       }
 
+      // ── Sci-fi UI click sound ───────────────────────────────────────────────
+      const _clickAudio = new Audio('sounds/click.wav');
+      _clickAudio.volume = 0.7;
+      function playUIClick() {
+        try {
+          const s = _clickAudio.cloneNode();
+          s.volume = 0.7;
+          s.play().catch(() => {});
+        } catch (_) {}
+      }
+
       document.querySelectorAll(".tab-btn").forEach((btn) => {
         btn.addEventListener("click", async () => {
+          playUIClick();
           document
             .querySelectorAll(".tab-btn")
             .forEach((b) => b.classList.remove("active"));

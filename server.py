@@ -107,6 +107,11 @@ def index():
     return send_file("voice_assistant_ui.html")
 
 
+@app.route("/sounds/<path:filename>")
+def sounds(filename):
+    return send_file(f"sounds/{filename}")
+
+
 @app.route("/api/config", methods=["GET"])
 def api_get_config():
     return jsonify(_load_config_file())
@@ -590,6 +595,19 @@ def assistant_loop():
     emit("log", {"level": "system", "text": f"Ready - press {hotkey.upper()} or say the wake word."})
     emit("state", {"state": "idle"})
     emit("system_ready", {})
+
+    # Greet the user using the real TTS voice
+    try:
+        import threading as _th
+        from datetime import datetime as _dt
+        def _greet():
+            import time as _t; _t.sleep(0.6)
+            _h = _dt.now().hour
+            _tod = "morning" if _h < 12 else "afternoon" if _h < 17 else "evening"
+            speak(f"Good {_tod}, sir. AXIOM is online.")
+        _th.Thread(target=_greet, daemon=True).start()
+    except Exception:
+        pass
 
     while True:
         conversation_cfg = CFG.get("conversation", {}) or {}
