@@ -23,7 +23,7 @@ whisper:
   temperature: 0
   condition_on_previous_text: false
   no_speech_threshold: 0.6
-  logprob_threshold: -1.0
+  logprob_threshold: -1
   initial_prompt: "AXIOM personal voice assistant. Common words: Gmail, Spotify, Calendar,
     Obsidian, Claude, Gemini, AXIOM, Jarvis."
 
@@ -56,7 +56,7 @@ wake_word:
   enabled: true # listens continuously alongside the configured hotkey
   model: hey_jarvis # closest built-in model to "Hey Axiom"; for true "Hey Axiom" train at github.com/dscripka/openWakeWord
   model_path: "" # custom .onnx path overrides model
-  threshold: 0.5 # raise if false positives happen
+  threshold: 1   # raise if false positives happen
   cooldown_seconds: 3 # minimum seconds between activations
   download_retries: 3 # model download attempts before falling back to hotkey only
 
@@ -82,7 +82,6 @@ projects:
     - voice
     - ai
     - python
-
   labforge:
     name: "LabForge"
     aliases:
@@ -104,16 +103,6 @@ projects:
     - javascript
     - nodejs
     - react
-  # add more, e.g.:
-  # myproject:
-  #   name: "MyProject"
-  #   aliases: ["my project", "the app"]
-  #   repo_path: "C:/path/to/myproject"
-  #   description: "Short pitch"
-  #   default_scenario: coding_sequence
-
-# Legacy flat map — kept for backwards compatibility. ProjectRegistry will
-# promote any keys here that aren't already in projects: above.
 repos:
   axiom: "E:/_DEV/Personal Voice Assistant"
   # add more, e.g.:
@@ -210,39 +199,50 @@ scenarios:
     - action: speak
       text: '{project_name} is ready. What are we tackling today?'
   morning_routine:
-    description: "Daily startup workflow"
+    description: "Daily startup workflow — weather, schedule, project status, last commit"
     steps:
     - action: speak
       text: Good morning. Today is {day}, {date}.
     - action: tool
-      name: get_weather
       inputs:
-        location: Sofia
+        location: Eindhoven
+      name: get_weather
+    - action: tool
+      name: today_schedule
+      inputs: {}
+    - action: tool
+      name: project_status
+      inputs:
+        project_name: axiom
+    - action: tool
+      name: get_last_commit_message
+      inputs:
+        repo_name: axiom
     - action: open_website
       target: email
     - action: open_website
       target: calendar
     - action: tool
-      name: append_daily_note
       inputs:
         content: Started the day at {time}.
+      name: append_daily_note
   deep_work:
     description: "Enter focus mode — lo-fi music, 90-minute timer"
     steps:
     - action: tool
-      name: set_volume
       inputs:
         level: 30
+      name: set_volume
     - action: open_website
       target: https://www.youtube.com/watch?v=jfKfPfyJRdk
     - action: notify
-      title: AXIOM
       message: Deep work mode active. 90 minute timer set.
+      title: AXIOM
     - action: tool
-      name: set_timer
       inputs:
-        minutes: 90
         label: Deep Work
+        minutes: 90
+      name: set_timer
     - action: speak
       text: Deep work mode. Ninety minutes. Go.
   wrap_up:
@@ -252,16 +252,13 @@ scenarios:
       prompt: What did you accomplish today?
       slot: accomplishments
     - action: tool
-      name: append_daily_note
       inputs:
         content: 'End of day: {accomplishments}'
+      name: append_daily_note
     - action: run_git
       command: status
     - action: speak
       text: Logged. See you tomorrow.
-
-
-# ─── Self-learning ────────────────────────────────────────────────────────────
 learning:
   reflection_enabled: true
   auto_reflect_after_sessions: 10   # trigger reflection every N sessions

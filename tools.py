@@ -272,6 +272,16 @@ GEMINI_TOOLS = [{
             "description": "Tell the user what Spotify is currently playing.",
             "parameters": {"type": "object", "properties": {}}
         },
+        {
+            "name": "spotify_status",
+            "description": "Check local Spotify configuration and OAuth connection status without starting playback.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "connect_spotify",
+            "description": "Start Spotify OAuth connection. Use when the user says connect, authorize, or configure Spotify.",
+            "parameters": {"type": "object", "properties": {}}
+        },
 
         # Code intelligence (Phase 6 old advanced tools)
         {
@@ -414,6 +424,20 @@ GEMINI_TOOLS = [{
                     }
                 },
                 "required": ["repo_name"]
+            }
+        },
+        {
+            "name": "get_last_commit_message",
+            "description": "Return the subject line of the most recent git commit for a project. Use when the user asks what the last commit was or what was recently changed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_name": {
+                        "type": "string",
+                        "description": "Short repo name from config. Leave blank to use current directory."
+                    }
+                },
+                "required": []
             }
         },
         {
@@ -915,6 +939,30 @@ def spotify_now_playing() -> str:
         return f"Spotify status failed: {e}"
 
 
+def spotify_status() -> str:
+    try:
+        import spotify_client
+        status = spotify_client.status(_CFG)
+        bits = [
+            "enabled" if status["enabled"] else "disabled",
+            "client id set" if status["has_client_id"] else "client id missing",
+            "client secret set" if status["has_client_secret"] else "client secret missing",
+            "connected" if status["connected"] else "not connected",
+        ]
+        return "Spotify status: " + ", ".join(bits) + f". Redirect URI: {status['redirect_uri'] or 'missing'}."
+    except Exception as e:
+        return f"Spotify status failed: {e}"
+
+
+def connect_spotify() -> str:
+    try:
+        import spotify_client
+        status = spotify_client.connect(_CFG)
+        return "Spotify connected." if status.get("connected") else "Spotify OAuth started, but no token was saved yet."
+    except Exception as e:
+        return f"Spotify connection failed: {e}"
+
+
 def _repo_root(repo_name: str = "") -> Path:
     repo_name = (repo_name or "").strip()
     if _project_registry is not None:
@@ -1248,6 +1296,18 @@ def ha_call_service(domain: str, service: str, data: dict | None = None) -> str:
         return f"Could not call Home Assistant service: {e}"
 
 
+def get_last_commit_message(repo_name: str = "") -> str:
+    cwd = _resolve_repo_path(repo_name)
+    if isinstance(cwd, str) and cwd.startswith("Error"):
+        return cwd
+    result = subprocess.run(
+        "git log -1 --pretty=format:%s",
+        shell=True, capture_output=True, text=True, cwd=cwd
+    )
+    msg = result.stdout.strip()
+    return f"Last commit: {msg}" if msg else "No commits found."
+
+
 def run_git(command: str, repo_name: str = "") -> str:
     cwd = _resolve_repo_path(repo_name)
     if isinstance(cwd, str) and cwd.startswith("Error"):
@@ -1525,6 +1585,8 @@ def execute_tool(name: str, inputs: dict) -> str:
         "spotify_play":     lambda i: spotify_play(i["query"]),
         "spotify_control":  lambda i: spotify_control(i["action"]),
         "spotify_now_playing": lambda i: spotify_now_playing(),
+        "spotify_status":   lambda i: spotify_status(),
+        "connect_spotify":  lambda i: connect_spotify(),
         "create_file":      lambda i: create_file(i["path"], i["content"], i.get("repo_name", "")),
         "read_file":        lambda i: read_file(i["path"], i.get("repo_name", "")),
         "search_codebase":  lambda i: search_codebase(i["query"], i.get("repo_name", "")),
@@ -1539,6 +1601,7 @@ def execute_tool(name: str, inputs: dict) -> str:
         "connect_gmail":    lambda i: connect_gmail(),
         "ha_get_state":     lambda i: ha_get_state(i["entity_id"]),
         "ha_call_service":  lambda i: ha_call_service(i["domain"], i["service"], i.get("data", {})),
+        "get_last_commit_message": lambda i: get_last_commit_message(i.get("repo_name", "")),
         "run_git":          lambda i: run_git(i["command"], i.get("repo_name", "")),
         "run_terminal":     lambda i: run_terminal(i["command"], i.get("repo_name", "")),
         "describe_screen":  lambda i: describe_screen(),

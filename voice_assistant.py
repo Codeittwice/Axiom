@@ -257,7 +257,13 @@ def _system_prompt() -> str:
         f"Tone: {tone}. Verbosity: {verbosity}. "
         "Responses are spoken aloud, so keep them conversational and easy to hear. "
         "Avoid markdown, bullet points, and long lists unless the user specifically asks. "
-        "Use your tools when needed for real-time information."
+        "Tool use rules: "
+        "ALWAYS call search_web for any question about prices, travel costs, current events, news, "
+        "real-time facts, or anything you cannot answer with certainty from training data — never guess. "
+        "Call get_weather for weather questions. "
+        "Call today_schedule or next_event for calendar questions. "
+        "Call get_last_commit_message when asked about the latest commit or recent changes. "
+        "When in doubt between answering from memory and calling a tool, call the tool."
     )
 
 
@@ -287,6 +293,7 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     has_calendar = "calendar" in text or "schedule" in text or "meeting" in text or "event" in text
     has_email = "email" in text or "mail" in text or "gmail" in text or "inbox" in text
     has_obsidian = "obsidian" in text or "vault" in text
+    has_spotify = "spotify" in text or "music" in text or "song" in text or "track" in text
     has_task = "task" in text or "todo" in text or "to do" in text or "remind me" in text
     config_words = ("config", "setting", "enabled", "disabled", "true", "false", "check")
     email_status_words = ("config", "setting", "enabled", "disabled", "true", "false", "status")
@@ -311,6 +318,16 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
         return "connect_gmail", {}
     if has_email and any(word in text for word in email_status_words):
         return "gmail_status", {}
+    if has_spotify and ("connect" in text or "authorize" in text or "authorise" in text or "configure" in text):
+        return "connect_spotify", {}
+    if has_spotify and ("status" in text or "configured" in text or "enabled" in text):
+        return "spotify_status", {}
+    if has_spotify and ("what" in text or "current" in text or "now playing" in text):
+        return "spotify_now_playing", {}
+    if has_spotify and ("pause" in text or "stop" in text):
+        return "spotify_control", {"action": "pause"}
+    if has_spotify and ("resume" in text or "play" in text) and not any(word in text for word in ("song", "track", "music")):
+        return "spotify_control", {"action": "play"}
     if has_email and ("mark" in text or "reset" in text) and "check" in text:
         return "mark_email_check", {}
     if has_email and ("new" in text or "since" in text):
