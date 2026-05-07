@@ -664,3 +664,19 @@ Use the voice feedback about task priorities to make the main page visually show
 - Added priority dots and color accents: high is red, medium is yellow/orange, low is green.
 - Mirrored the same grouped priority sections in the full Tasks tab.
 - Changed task sorting so priority wins before due date.
+
+---
+
+## 2026-05-07 - Reflection Suggestion Deduping
+
+### Goal
+Stop reflection from proposing the same suggestions every time it runs.
+
+### Implementation log
+
+- Reflection now blocks all existing suggestion titles, not only rejected ones.
+- Added canonical suggestion fingerprints using type, normalized title, and proposal description.
+- Added near-duplicate detection so small title wording changes are still suppressed.
+- Added `user_model.seen_suggestion_fingerprints` as a rolling memory of previously proposed ideas.
+- Reflection prompt now tells Gemini about all already-seen titles.
+- Added unit tests for duplicate, seen-memory, and all-status blocking behavior.

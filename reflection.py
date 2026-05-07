@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 
 _USER_MODEL_PATH = Path("data/user_model.json")
@@ -28,6 +30,7 @@ _USER_MODEL_SKELETON: dict = {
     "interaction_patterns": [],
     "rejected_suggestions": [],
     "approved_suggestions": [],
+    "seen_suggestion_fingerprints": [],
     "last_updated": None,
 }
 
@@ -43,8 +46,8 @@ You are AXIOM's self-reflection engine. Analyse the data below and suggest impro
 ## Session logs (last {days} days, {session_count} sessions)
 {sessions_summary}
 
-## Rejected suggestion titles (never re-propose these)
-{rejected_titles}
+## Already-seen suggestion titles (never re-propose these)
+{blocked_titles}
 
 ## Task
 Identify 1-5 specific, actionable improvements. Focus on:
@@ -89,7 +92,8 @@ def run_reflection(cfg: dict) -> list[dict]:
         user_model = _load_user_model()
         registry = build_skill_registry(cfg)
 
-        rejected_titles = _rejected_titles_from_suggestions()
+        existing = _load_suggestions()
+        blocked_titles = _blocked_suggestion_titles(user_model, existing)
         sessions_summary = _summarize_sessions_for_prompt(logs)
 
         prompt = _REFLECTION_PROMPT_TEMPLATE.format(
@@ -98,7 +102,7 @@ def run_reflection(cfg: dict) -> list[dict]:
             sessions_summary=sessions_summary,
             days=days,
             session_count=len(logs),
-            rejected_titles=json.dumps(rejected_titles),
+            blocked_titles=json.dumps(blocked_titles),
         )
 
         api_key = os.getenv("GEMINI_API_KEY")
@@ -118,9 +122,7 @@ def run_reflection(cfg: dict) -> list[dict]:
         if not isinstance(candidates, list):
             candidates = [candidates]
 
-        existing = _load_suggestions()
-        existing_titles = {s["title"].lower() for s in existing}
-        rejected_lower = {t.lower() for t in rejected_titles}
+        existing_fingerprints = _suggestion_fingerprints(existing, user_model)
 
         now = datetime.now(timezone.utc).isoformat()
         new_suggestions: list[dict] = []
@@ -128,14 +130,15 @@ def run_reflection(cfg: dict) -> list[dict]:
             title = c.get("title", "").strip()
             if not title:
                 continue
-            title_lower = title.lower()
-            if title_lower in existing_titles or title_lower in rejected_lower:
+            fingerprint = _suggestion_fingerprint(c)
+            if _is_duplicate_suggestion(c, existing_fingerprints):
                 continue
             suggestion = {
                 "id": str(uuid.uuid4()),
                 "created_at": now,
                 "type": c.get("type", "new_skill"),
                 "title": title,
+                "fingerprint": fingerprint,
                 "reasoning": c.get("reasoning", ""),
                 "evidence": c.get("evidence", []),
                 "proposal": c.get("proposal", {}),
@@ -143,12 +146,13 @@ def run_reflection(cfg: dict) -> list[dict]:
                 "user_notes": "",
             }
             new_suggestions.append(suggestion)
-            existing_titles.add(title_lower)
+            existing_fingerprints.append(fingerprint)
 
         if new_suggestions:
             _save_suggestions(existing + new_suggestions)
 
         _update_user_model_from_logs(user_model, logs)
+        _remember_seen_suggestions(user_model, existing + new_suggestions)
         _save_user_model(user_model)
 
         try:
@@ -254,11 +258,85 @@ def _save_suggestions(items: list[dict]) -> None:
         json.dump(items, f, indent=2, ensure_ascii=False)
 
 
-def _rejected_titles_from_suggestions() -> list[str]:
-    return [
-        s["title"] for s in _load_suggestions()
-        if s.get("status") == "rejected"
+def _blocked_suggestion_titles(user_model: dict, suggestions: list[dict]) -> list[str]:
+    titles = []
+    for suggestion in suggestions:
+        title = str(suggestion.get("title") or "").strip()
+        if title:
+            titles.append(title)
+    for item in user_model.get("seen_suggestion_fingerprints", []) or []:
+        if isinstance(item, dict) and item.get("title"):
+            titles.append(str(item["title"]))
+    return sorted(set(titles), key=str.lower)
+
+
+def _normalize_suggestion_text(value: object) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    words = [
+        word
+        for word in text.split()
+        if word not in {"a", "an", "the", "to", "for", "and", "or", "of", "in", "with"}
     ]
+    return " ".join(words)
+
+
+def _suggestion_fingerprint(suggestion: dict) -> str:
+    title = _normalize_suggestion_text(suggestion.get("title", ""))
+    proposal = suggestion.get("proposal", {}) or {}
+    description = _normalize_suggestion_text(proposal.get("description", ""))
+    kind = _normalize_suggestion_text(suggestion.get("type", ""))
+    return " | ".join(part for part in [kind, title, description[:160]] if part)
+
+
+def _suggestion_fingerprints(suggestions: list[dict], user_model: dict) -> list[str]:
+    fingerprints = []
+    for suggestion in suggestions:
+        fingerprint = suggestion.get("fingerprint") or _suggestion_fingerprint(suggestion)
+        if fingerprint:
+            fingerprints.append(fingerprint)
+    for item in user_model.get("seen_suggestion_fingerprints", []) or []:
+        if isinstance(item, dict) and item.get("fingerprint"):
+            fingerprints.append(str(item["fingerprint"]))
+        elif isinstance(item, str):
+            fingerprints.append(item)
+    return list(dict.fromkeys(fingerprints))
+
+
+def _is_duplicate_suggestion(candidate: dict, existing_fingerprints: list[str]) -> bool:
+    fingerprint = _suggestion_fingerprint(candidate)
+    if not fingerprint:
+        return True
+    for existing in existing_fingerprints:
+        if fingerprint == existing:
+            return True
+        if SequenceMatcher(None, fingerprint, existing).ratio() >= 0.86:
+            return True
+    return False
+
+
+def _remember_seen_suggestions(user_model: dict, suggestions: list[dict]) -> None:
+    existing = user_model.setdefault("seen_suggestion_fingerprints", [])
+    by_fingerprint: dict[str, dict] = {}
+    for item in existing:
+        if isinstance(item, dict) and item.get("fingerprint"):
+            by_fingerprint[str(item["fingerprint"])] = item
+        elif isinstance(item, str):
+            by_fingerprint[item] = {"fingerprint": item, "title": "", "status": "seen"}
+
+    now = datetime.now(timezone.utc).isoformat()
+    for suggestion in suggestions:
+        fingerprint = suggestion.get("fingerprint") or _suggestion_fingerprint(suggestion)
+        if not fingerprint:
+            continue
+        by_fingerprint[fingerprint] = {
+            "fingerprint": fingerprint,
+            "title": suggestion.get("title", ""),
+            "status": suggestion.get("status", "pending"),
+            "last_seen": now,
+        }
+
+    user_model["seen_suggestion_fingerprints"] = list(by_fingerprint.values())[-200:]
 
 
 def _summarize_sessions_for_prompt(logs: list[dict]) -> str:
