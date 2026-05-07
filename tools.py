@@ -507,6 +507,64 @@ GEMINI_TOOLS = [{
 
         # ── System ──────────────────────────────────────────────────────────
         {
+            "name": "capture_task",
+            "description": "Capture a new markdown task into the Obsidian AXIOM inbox. Use for 'add task' or 'remind me to'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The task text"},
+                    "due": {"type": "string", "description": "Optional due date as YYYY-MM-DD"},
+                    "priority": {"type": "string", "description": "Optional priority: low, medium, or high"},
+                    "project": {"type": "string", "description": "Optional project name"},
+                    "course": {"type": "string", "description": "Optional course name"}
+                },
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "today_tasks",
+            "description": "List open Obsidian tasks due today.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "upcoming_tasks",
+            "description": "List open Obsidian tasks due in the next few days.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "Number of days to look ahead, default 7"}
+                }
+            }
+        },
+        {
+            "name": "complete_task",
+            "description": "Mark an open Obsidian task complete by matching part of its text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Text to match against the open task"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "reschedule_task",
+            "description": "Change an open Obsidian task's due date by matching part of its text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Text to match against the open task"},
+                    "due": {"type": "string", "description": "New due date as YYYY-MM-DD"}
+                },
+                "required": ["query", "due"]
+            }
+        },
+        {
+            "name": "obsidian_status",
+            "description": "Check the configured Obsidian vault and open task count.",
+            "parameters": {"type": "object", "properties": {}}
+        },
+        {
             "name": "set_volume",
             "description": "Set the system audio volume. Use for 'set volume to 50', 'mute', 'turn it up'.",
             "parameters": {
@@ -1317,6 +1375,68 @@ def search_notes(query: str) -> str:
     return "\n".join(results[:8])
 
 
+def _format_tasks_for_voice(tasks: list[dict], empty: str) -> str:
+    if not tasks:
+        return empty
+    lines = []
+    for task in tasks[:8]:
+        details = []
+        if task.get("due"):
+            details.append(f"due {task['due']}")
+        if task.get("priority"):
+            details.append(f"{task['priority']} priority")
+        if task.get("course"):
+            details.append(str(task["course"]))
+        elif task.get("project"):
+            details.append(str(task["project"]))
+        suffix = f" ({', '.join(details)})" if details else ""
+        lines.append(f"{len(lines) + 1}. {task['text']}{suffix}")
+    more = len(tasks) - len(lines)
+    if more > 0:
+        lines.append(f"and {more} more.")
+    return " ".join(lines)
+
+
+def capture_task(text: str, due: str = "", priority: str = "", project: str = "", course: str = "") -> str:
+    import obsidian_tasks
+    task = obsidian_tasks.capture_task(_CFG, text, due, priority, project, course)
+    due_part = f" due {task['due']}" if task.get("due") else ""
+    return f"Captured task: {task['text']}{due_part}."
+
+
+def today_tasks() -> str:
+    import obsidian_tasks
+    tasks = obsidian_tasks.today_tasks(_CFG)
+    return _format_tasks_for_voice(tasks, "No open Obsidian tasks are due today.")
+
+
+def upcoming_tasks(days: int = 7) -> str:
+    import obsidian_tasks
+    days = max(1, int(days or 7))
+    tasks = obsidian_tasks.upcoming_tasks(_CFG, days=days)
+    return _format_tasks_for_voice(tasks, f"No open Obsidian tasks are due in the next {days} days.")
+
+
+def complete_task(query: str) -> str:
+    import obsidian_tasks
+    task = obsidian_tasks.find_task_by_query(_CFG, query)
+    done = obsidian_tasks.complete_task(_CFG, task["id"])
+    return f"Marked done: {done['text']}."
+
+
+def reschedule_task(query: str, due: str) -> str:
+    import obsidian_tasks
+    task = obsidian_tasks.find_task_by_query(_CFG, query)
+    updated = obsidian_tasks.reschedule_task(_CFG, task["id"], due)
+    return f"Rescheduled: {updated['text']} to {updated['due']}."
+
+
+def obsidian_status() -> str:
+    import obsidian_tasks
+    status = obsidian_tasks.status(_CFG)
+    return f"Obsidian vault is {status['vault']}. {status['open']} open tasks, {status['due_today']} due today."
+
+
 # ── System ────────────────────────────────────────────────────────────────────
 
 def set_volume(level: int) -> str:
@@ -1427,6 +1547,12 @@ def execute_tool(name: str, inputs: dict) -> str:
         "append_daily_note":lambda i: append_daily_note(i["content"]),
         "search_notes":     lambda i: search_notes(i["query"]),
         "explain_obsidian_workflow": lambda i: explain_obsidian_workflow(),
+        "capture_task":     lambda i: capture_task(i["text"], i.get("due", ""), i.get("priority", ""), i.get("project", ""), i.get("course", "")),
+        "today_tasks":      lambda i: today_tasks(),
+        "upcoming_tasks":   lambda i: upcoming_tasks(int(i.get("days", 7))),
+        "complete_task":    lambda i: complete_task(i["query"]),
+        "reschedule_task":  lambda i: reschedule_task(i["query"], i["due"]),
+        "obsidian_status":  lambda i: obsidian_status(),
         "set_volume":       lambda i: set_volume(int(i["level"])),
         "set_timer":        lambda i: set_timer(float(i["minutes"]), i.get("label", "Timer")),
         "read_clipboard":   lambda i: read_clipboard(),

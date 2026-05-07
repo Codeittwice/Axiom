@@ -6,19 +6,34 @@ assistant:
     verbosity: concise # concise | normal | verbose
   acknowledgements: true # say a short cue before slow tool work
 
+conversation:
+  follow_up_listening: true # after AXIOM asks a question, listen without another wake word
+  follow_up_timeout_seconds: 120 # return to wake-word/hotkey mode after this much silence
+
 audio:
   sample_rate: 16000 # Hz — Whisper prefers 16kHz
   max_record_seconds: 12 # hard cap per utterance
   vad_energy_threshold: 50 # lower = more sensitive; raise to ~1500 if noisy
   vad_silence_duration: 1.5 # seconds of silence before stopping
+  pre_roll_seconds: 0.35 # keep audio just before VAD triggers so first words are not clipped
 
 whisper:
-  model: base # tiny | base | small | medium | large
+  model: small # tiny | base | small | medium | large
+  language: en
+  temperature: 0
+  condition_on_previous_text: false
+  no_speech_threshold: 0.6
+  logprob_threshold: -1.0
+  initial_prompt: "AXIOM personal voice assistant. Common words: Gmail, Spotify, Calendar,
+    Obsidian, Claude, Gemini, AXIOM, Jarvis."
 
 tts:
-  engine: edge # edge (online, great quality) | pyttsx3 (offline)
+  engine: edge # edge (online, better quality) | pyttsx3 (fast/offline fallback)
   edge_voice: en-US-AndrewNeural # deep male; alternatives: BrianNeural, GuyNeural, ChristopherNeural, RyanNeural (UK)
+  edge_rate: "+12%"
+  max_chunk_chars: 140
   sentence_streaming: true # speak sentence chunks so responses begin sooner
+  gemini_streaming: true # stream normal Gemini replies into TTS before full answer completes
   interruptible: true # hotkey or wake word can stop playback and listen again
   pyttsx3_rate: 175
   pyttsx3_volume: 0.9
@@ -52,13 +67,43 @@ wake_word:
 projects:
   axiom:
     name: "AXIOM"
-    aliases: ["axiom voice assistant", "voice assistant", "the assistant"]
+    aliases:
+    - axiom voice assistant
+    - voice assistant
+    - the assistant
     repo_path: "E:/_DEV/Personal Voice Assistant"
     description: "Local Windows voice assistant"
     default_scenario: coding_sequence
     obsidian_folder: "Projects/AXIOM"
-    websites: [github, claude]
-    tags: [voice, ai, python]
+    websites:
+    - github
+    - claude
+    tags:
+    - voice
+    - ai
+    - python
+
+  labforge:
+    name: "LabForge"
+    aliases:
+    - labforge
+    - latex formatter
+    - ai formatter
+    - formatter app
+    repo_path: "E:/_DEV/LabForge"
+    description: "A website that formats reports and papers from messy text into clean
+      LaTeX"
+    default_scenario: coding_sequence
+    obsidian_folder: "Projects/LabForge"
+    websites:
+    - github
+    - claude
+    tags:
+    - formatting
+    - latex
+    - javascript
+    - nodejs
+    - react
   # add more, e.g.:
   # myproject:
   #   name: "MyProject"
@@ -88,8 +133,16 @@ websites:
 # Say "open my email" or "open github" and AXIOM launches the URL.
 # Obsidian vault integration
 obsidian:
-  vault_path: "" # REQUIRED: e.g. C:/Users/hmgad/Documents/ObsidianVault
+  vault_path: "E:/_DEV/Personal Voice Assistant" # REQUIRED: e.g. C:/Users/hmgad/Documents/ObsidianVault
   daily_notes_folder: "" # Optional subfolder for daily notes (e.g. "Daily Notes")
+  tasks_scan_paths: []
+  task_sources: []
+  inbox_note: "AXIOM Inbox.md"
+  task_archive_note: "AXIOM Done.md"
+  default_project: "AXIOM"
+  courses_folder: "Courses"
+  projects_folder: "Projects"
+  objectives_folder: "Objectives"
 
 google:
   enable_calendar: true # Set true after adding secrets/google_oauth_client.json
@@ -100,15 +153,16 @@ google:
   timezone: "Europe/Berlin"
 
 spotify:
-  enabled: false
-  client_id: ""
-  client_secret: ""
+  enabled: true
+  client_id: "c7893b0bb9af4beeb5e4d8bb9c69459a"
+  client_secret: "" # Prefer SPOTIPY_CLIENT_SECRET in .env
   redirect_uri: "http://127.0.0.1:8888/callback"
   cache_path: "secrets/spotify_token.json"
 
 gmail:
   enabled: true
-  scopes: ["https://www.googleapis.com/auth/gmail.readonly"]
+  scopes:
+  - https://www.googleapis.com/auth/gmail.readonly
   state_file: "secrets/last_email_check.json"
   use_gemini_summary: false
   max_results: 20
@@ -123,94 +177,85 @@ scenarios:
   ai_tools:
     description: "Open Claude.ai and ChatGPT side by side"
     steps:
-      - action: open_website
-        target: chatgpt
-      - action: open_website
-        target: claude
-
+    - action: open_website
+      target: chatgpt
+    - action: open_website
+      target: claude
   correspondence:
     description: "Open email and calendar"
     steps:
-      - action: open_website
-        target: email
-      - action: open_website
-        target: calendar
-
-  # ── Killer use case: full coding session ─────────────────────────────────
+    - action: open_website
+      target: email
+    - action: open_website
+      target: calendar
   coding_sequence:
     description: "Start a coding session for a project"
     requires_project: true
     steps:
-      - action: speak
-        text: "Starting coding sequence for {project_name}."
-      - action: open_repo
-        repo: "{project_name}"
-      - action: wait
-        seconds: 1
-      - action: open_website
-        target: claude
-      - action: open_website
-        target: chatgpt
-      - action: open_website
-        target: github
-      - action: run_git
-        command: "status --short"
-        repo: "{project_name}"
-      - action: speak
-        text: "{project_name} is ready. What are we tackling today?"
-
-  # ── Daily startup ────────────────────────────────────────────────────────
+    - action: speak
+      text: Starting coding sequence for {project_name}.
+    - action: open_repo
+      repo: '{project_name}'
+    - action: wait
+      seconds: 1
+    - action: open_website
+      target: claude
+    - action: open_website
+      target: chatgpt
+    - action: open_website
+      target: github
+    - action: run_git
+      command: status --short
+      repo: '{project_name}'
+    - action: speak
+      text: '{project_name} is ready. What are we tackling today?'
   morning_routine:
     description: "Daily startup workflow"
     steps:
-      - action: speak
-        text: "Good morning. Today is {day}, {date}."
-      - action: tool
-        name: get_weather
-        inputs:
-          location: "Sofia"
-      - action: open_website
-        target: email
-      - action: open_website
-        target: calendar
-      - action: tool
-        name: append_daily_note
-        inputs:
-          content: "Started the day at {time}."
-
-  # ── Focus mode ───────────────────────────────────────────────────────────
+    - action: speak
+      text: Good morning. Today is {day}, {date}.
+    - action: tool
+      name: get_weather
+      inputs:
+        location: Sofia
+    - action: open_website
+      target: email
+    - action: open_website
+      target: calendar
+    - action: tool
+      name: append_daily_note
+      inputs:
+        content: Started the day at {time}.
   deep_work:
     description: "Enter focus mode — lo-fi music, 90-minute timer"
     steps:
-      - action: tool
-        name: set_volume
-        inputs:
-          level: 30
-      - action: open_website
-        target: "https://www.youtube.com/watch?v=jfKfPfyJRdk"
-      - action: notify
-        title: "AXIOM"
-        message: "Deep work mode active. 90 minute timer set."
-      - action: tool
-        name: set_timer
-        inputs:
-          minutes: 90
-          label: "Deep Work"
-      - action: speak
-        text: "Deep work mode. Ninety minutes. Go."
-
-  # ── End of day ───────────────────────────────────────────────────────────
+    - action: tool
+      name: set_volume
+      inputs:
+        level: 30
+    - action: open_website
+      target: https://www.youtube.com/watch?v=jfKfPfyJRdk
+    - action: notify
+      title: AXIOM
+      message: Deep work mode active. 90 minute timer set.
+    - action: tool
+      name: set_timer
+      inputs:
+        minutes: 90
+        label: Deep Work
+    - action: speak
+      text: Deep work mode. Ninety minutes. Go.
   wrap_up:
     description: "End of day shutdown"
     steps:
-      - action: ask
-        prompt: "What did you accomplish today?"
-        slot: accomplishments
-      - action: tool
-        name: append_daily_note
-        inputs:
-          content: "End of day: {accomplishments}"
-      - action: run_git
-        command: "status"
-      - action: speak
-        text: "Logged. See you tomorrow."
+    - action: ask
+      prompt: What did you accomplish today?
+      slot: accomplishments
+    - action: tool
+      name: append_daily_note
+      inputs:
+        content: 'End of day: {accomplishments}'
+    - action: run_git
+      command: status
+    - action: speak
+      text: Logged. See you tomorrow.

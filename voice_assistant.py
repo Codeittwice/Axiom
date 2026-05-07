@@ -9,8 +9,10 @@ Pipeline:
 
 import asyncio
 from collections import deque
+from dataclasses import dataclass
 import json
 import os
+import queue
 import random
 import re
 import sys
@@ -74,6 +76,14 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ─── State callback (wired up by server.py) ───────────────────────────────────
 _emit: Optional[Callable] = None
+
+
+@dataclass
+class AIResult:
+    reply: str
+    history: list
+    spoke: bool = False
+    interrupted: bool = False
 
 def set_emit(fn: Callable):
     global _emit
@@ -146,28 +156,33 @@ def _maybe_summarize_history(history: list) -> list:
 
 # ─── VAD Recording ────────────────────────────────────────────────────────────
 
-def record_audio() -> Optional[str]:
+def record_audio(wait_for_speech_seconds: Optional[float] = None) -> Optional[str]:
     """
     Record from microphone using energy-based VAD.
     Starts capturing on first loud chunk, stops after VAD_SILENCE_SECS of quiet.
+    wait_for_speech_seconds controls how long to wait for speech to begin.
     Returns path to a temp WAV file, or None if nothing was captured.
     """
     chunk_secs   = 0.08
     chunk_size   = int(SAMPLE_RATE * chunk_secs)
-    max_chunks   = int(MAX_RECORD_SECS / chunk_secs)
+    max_speech_chunks = int(MAX_RECORD_SECS / chunk_secs)
+    wait_secs = wait_for_speech_seconds if wait_for_speech_seconds is not None else MAX_RECORD_SECS
+    max_idle_chunks = max(1, int(float(wait_secs) / chunk_secs))
     silence_need = int(VAD_SILENCE_SECS / chunk_secs)
     pre_roll_secs = float(CFG.get("audio", {}).get("pre_roll_seconds", 0.35) or 0)
     pre_roll = deque(maxlen=max(1, int(pre_roll_secs / chunk_secs)))
 
     _send("state", {"state": "listening"})
-    print(f"[AXIOM] Listening (threshold={VAD_THRESHOLD})…")
+    print(f"[AXIOM] Listening (threshold={VAD_THRESHOLD}, wait={wait_secs:.0f}s)...")
 
     chunks: list       = []
     silence_count: int = 0
+    speech_chunks: int = 0
+    idle_chunks: int   = 0
     started: bool      = False
 
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16") as stream:
-        for _ in range(max_chunks):
+        while True:
             chunk, _ = stream.read(chunk_size)
             energy   = int(np.abs(chunk).mean())
 
@@ -176,14 +191,22 @@ def record_audio() -> Optional[str]:
                     chunks.extend(pre_roll)
                 started       = True
                 silence_count = 0
+                speech_chunks += 1
                 chunks.append(chunk)
             elif started:
                 chunks.append(chunk)
+                speech_chunks += 1
                 silence_count += 1
                 if silence_count >= silence_need:
                     break
             else:
                 pre_roll.append(chunk)
+                idle_chunks += 1
+                if idle_chunks >= max_idle_chunks:
+                    break
+
+            if started and speech_chunks >= max_speech_chunks:
+                break
 
     if not chunks:
         print("[AXIOM] No speech detected.")
@@ -259,6 +282,7 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     has_calendar = "calendar" in text or "schedule" in text or "meeting" in text or "event" in text
     has_email = "email" in text or "mail" in text or "gmail" in text or "inbox" in text
     has_obsidian = "obsidian" in text or "vault" in text
+    has_task = "task" in text or "todo" in text or "to do" in text or "remind me" in text
     config_words = ("config", "setting", "enabled", "disabled", "true", "false", "check")
     email_status_words = ("config", "setting", "enabled", "disabled", "true", "false", "status")
 
@@ -270,6 +294,12 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
         or "how will" in text
     ):
         return "explain_obsidian_workflow", {}
+    if (has_obsidian or has_task) and ("status" in text or "configured" in text):
+        return "obsidian_status", {}
+    if has_task and ("today" in text or "due now" in text):
+        return "today_tasks", {}
+    if has_task and ("upcoming" in text or "this week" in text or "next week" in text):
+        return "upcoming_tasks", {"days": 7}
     if has_calendar and any(word in text for word in config_words):
         return "calendar_status", {}
     if has_email and ("connect" in text or "authorize" in text or "authorise" in text or "consent" in text):
@@ -314,7 +344,53 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     return None
 
 
-def ask_ai(user_text: str, history: list) -> tuple[str, list]:
+def _can_stream_text_reply(user_text: str) -> bool:
+    """
+    Stream normal conversational replies. Local-control/tool-ish requests stay
+    on the non-streaming path so Gemini can still emit function calls reliably.
+    """
+    text = user_text.lower()
+    tool_markers = (
+        "open ",
+        "launch ",
+        "start ",
+        "run ",
+        "search",
+        "weather",
+        "calendar",
+        "schedule",
+        "meeting",
+        "event",
+        "email",
+        "mail",
+        "gmail",
+        "inbox",
+        "spotify",
+        "music",
+        "timer",
+        "task",
+        "todo",
+        "to do",
+        "remind me",
+        "volume",
+        "note",
+        "obsidian",
+        "vault",
+        "repo",
+        "project",
+        "codebase",
+        "diff",
+        "file",
+        "screen",
+        "screenshot",
+        "website",
+        "github",
+        "scenario",
+    )
+    return not any(marker in text for marker in tool_markers)
+
+
+def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIResult:
     """
     Send a message to Gemini, handle tool use, return (reply_text, updated_history).
     History is a simple list of {"role": "user"|"model", "text": "..."} dicts.
@@ -337,7 +413,7 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
             {"role": "model", "text": reply},
         ]
         _send("state", {"state": "idle"})
-        return reply, _maybe_summarize_history(updated_history)
+        return AIResult(reply=reply, history=_maybe_summarize_history(updated_history))
 
     # Convert stored text history to Gemini's content format
     gemini_history = [
@@ -351,6 +427,30 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
         tools=GEMINI_TOOLS,
     )
     chat = model.start_chat(history=gemini_history)
+
+    if speak_response and _tts_config().get("gemini_streaming", True) and _can_stream_text_reply(user_text):
+        try:
+            _send("state", {"state": "thinking"})
+            response_stream = chat.send_message(user_text, stream=True)
+            reply, interrupted = speak_response_stream(response_stream)
+            if reply:
+                print(console_text(f"[AXIOM] {ASSISTANT_NAME}: {reply}"))
+                updated_history = history + [
+                    {"role": "user", "text": user_text},
+                    {"role": "model", "text": reply},
+                ]
+                return AIResult(
+                    reply=reply,
+                    history=_maybe_summarize_history(updated_history),
+                    spoke=True,
+                    interrupted=interrupted,
+                )
+            _send("log", {"level": "warn", "text": "Streaming response was empty; retrying normally."})
+        except Exception as e:
+            print(console_text(f"[AXIOM] Streaming response failed ({e}); retrying normally."))
+            _send("log", {"level": "warn", "text": f"Streaming response failed; retrying normally: {e}"})
+
+        chat = model.start_chat(history=gemini_history)
 
     _send("state", {"state": "thinking"})
     response = chat.send_message(user_text)
@@ -389,7 +489,7 @@ def ask_ai(user_text: str, history: list) -> tuple[str, list]:
         {"role": "user",  "text": user_text},
         {"role": "model", "text": reply},
     ]
-    return reply, _maybe_summarize_history(updated_history)
+    return AIResult(reply=reply, history=_maybe_summarize_history(updated_history))
 
 
 def _response_text(response) -> str:
@@ -418,6 +518,32 @@ def _response_parts(response) -> list:
         return list(response.parts or [])
     except Exception:
         return []
+
+
+def _response_text_delta(response) -> str:
+    try:
+        return response.text or ""
+    except Exception:
+        parts = []
+        for part in _response_parts(response):
+            text = getattr(part, "text", "")
+            if text:
+                parts.append(text)
+        return "".join(parts)
+
+
+def expects_follow_up(text: str) -> bool:
+    """
+    Treat direct questions as an invitation to keep listening. Keep this simple
+    and conservative so statements do not accidentally hold the mic open.
+    """
+    cleaned = clean_text(text, collapse_whitespace=True)
+    if not cleaned:
+        return False
+    tail = cleaned[-220:]
+    if tail.rstrip().endswith("?"):
+        return True
+    return bool(re.search(r"\b(do you want|would you like|should i|which one|what do you|what should|how about|can you clarify)\b", tail, re.I))
 
 # ─── TTS ──────────────────────────────────────────────────────────────────────
 
@@ -452,6 +578,100 @@ def _split_for_tts(text: str) -> list[str]:
     if current:
         chunks.append(current)
     return chunks or [text]
+
+
+def _stream_ready_chunks(buffer: str, final: bool = False) -> tuple[list[str], str]:
+    """
+    Pull speakable chunks from an incremental text buffer. Prefer complete
+    sentences, but release a long clause if Gemini is being punctuation-shy.
+    """
+    max_chars = int(_tts_config().get("max_chunk_chars", 150) or 150)
+    chunks: list[str] = []
+
+    while buffer:
+        sentence = re.search(r"(?<=[.!?])\s+", buffer)
+        if sentence:
+            end = sentence.end()
+            chunks.extend(_split_for_tts(buffer[:end].strip()))
+            buffer = buffer[end:].lstrip()
+            continue
+
+        if len(buffer) >= max_chars * 2:
+            split_at = buffer.rfind(" ", 0, max_chars)
+            if split_at < max_chars // 2:
+                split_at = max_chars
+            chunks.append(clean_text(buffer[:split_at].strip()))
+            buffer = buffer[split_at:].lstrip()
+            continue
+
+        break
+
+    if final and buffer.strip():
+        chunks.extend(_split_for_tts(buffer.strip()))
+        buffer = ""
+
+    return [chunk for chunk in chunks if chunk], buffer
+
+
+def _play_tts_queue(chunks: "queue.Queue[Optional[str]]", result: dict) -> None:
+    global _speaking
+    _speech_interrupt.clear()
+    _speaking = True
+    _send("state", {"state": "speaking"})
+    try:
+        while True:
+            chunk = chunks.get()
+            if chunk is None:
+                break
+            if _speech_interrupt.is_set():
+                result["interrupted"] = True
+                break
+            if CFG["tts"]["engine"] == "edge":
+                interrupted = _speak_edge(chunk)
+            else:
+                interrupted = _speak_pyttsx3(chunk)
+            if interrupted:
+                result["interrupted"] = True
+                break
+    finally:
+        _speaking = False
+        _send("state", {"state": "idle"})
+
+
+def speak_response_stream(response_stream) -> tuple[str, bool]:
+    """
+    Consume a Gemini text stream while a worker speaks completed chunks.
+    Returns the full reply text and whether playback was interrupted.
+    """
+    chunks: queue.Queue[Optional[str]] = queue.Queue()
+    result = {"interrupted": False}
+    worker = threading.Thread(target=_play_tts_queue, args=(chunks, result), daemon=True)
+    worker.start()
+
+    full_text: list[str] = []
+    pending = ""
+    try:
+        for response in response_stream:
+            delta = _response_text_delta(response)
+            if not delta:
+                continue
+            full_text.append(delta)
+            pending += delta
+            ready, pending = _stream_ready_chunks(pending)
+            for chunk in ready:
+                chunks.put(chunk)
+            if result["interrupted"]:
+                break
+
+        ready, pending = _stream_ready_chunks(pending, final=True)
+        for chunk in ready:
+            chunks.put(chunk)
+    finally:
+        chunks.put(None)
+        worker.join()
+
+    reply = clean_text("".join(full_text), collapse_whitespace=True)
+    return reply, bool(result["interrupted"])
 
 
 def request_activation(source: str = "manual") -> None:

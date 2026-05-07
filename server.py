@@ -276,35 +276,11 @@ def _dashboard_schedule() -> dict:
 
 
 def _dashboard_todos() -> dict:
-    obsidian = CFG.get("obsidian", {}) or {}
-    vault_raw = str(obsidian.get("vault_path") or "").strip()
-    if not vault_raw:
-        return {"items": [], "error": "Obsidian vault not configured"}
-    vault = Path(vault_raw)
-    if not vault.exists():
-        return {"items": [], "error": "Obsidian vault not configured"}
-
-    scan_paths = obsidian.get("tasks_scan_paths") or []
-    roots = [vault / p for p in scan_paths] if scan_paths else [vault]
-    items = []
-    for root in roots:
-        if len(items) >= 5 or not root.exists():
-            continue
-        for md in root.rglob("*.md"):
-            if len(items) >= 5:
-                break
-            try:
-                for line in md.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith("- [ ] "):
-                        items.append({
-                            "text": stripped[6:].strip(),
-                            "source": str(md.relative_to(vault)),
-                        })
-                        break
-            except Exception:
-                continue
-    return {"items": items}
+    try:
+        import obsidian_tasks
+        return {"items": obsidian_tasks.scan_tasks(CFG, status="open", limit=5)}
+    except Exception as e:
+        return {"items": [], "error": str(e)}
 
 
 def _dashboard_projects() -> dict:
@@ -348,6 +324,65 @@ def api_dashboard():
     })
 
 
+@app.route("/api/obsidian/tasks", methods=["GET"])
+def api_obsidian_tasks():
+    try:
+        import obsidian_tasks
+        status = request.args.get("status", "open")
+        limit = int(request.args.get("limit", 20))
+        return jsonify({"items": obsidian_tasks.scan_tasks(CFG, status=status, limit=limit)})
+    except Exception as e:
+        return jsonify({"items": [], "error": str(e)})
+
+
+@app.route("/api/obsidian/today", methods=["GET"])
+def api_obsidian_today():
+    try:
+        import obsidian_tasks
+        limit = int(request.args.get("limit", 20))
+        return jsonify({"items": obsidian_tasks.today_tasks(CFG, limit=limit)})
+    except Exception as e:
+        return jsonify({"items": [], "error": str(e)})
+
+
+@app.route("/api/obsidian/capture", methods=["POST"])
+def api_obsidian_capture():
+    try:
+        import obsidian_tasks
+        payload = request.get_json(force=True)
+        task = obsidian_tasks.capture_task(
+            CFG,
+            str(payload.get("text", "")),
+            str(payload.get("due", "")),
+            str(payload.get("priority", "")),
+            str(payload.get("project", "")),
+            str(payload.get("course", "")),
+        )
+        return jsonify({"ok": True, "task": task})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route("/api/obsidian/tasks/<task_id>/complete", methods=["POST"])
+def api_obsidian_complete(task_id: str):
+    try:
+        import obsidian_tasks
+        return jsonify({"ok": True, "task": obsidian_tasks.complete_task(CFG, task_id)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route("/api/obsidian/tasks/<task_id>/reschedule", methods=["POST"])
+def api_obsidian_reschedule(task_id: str):
+    try:
+        import obsidian_tasks
+        payload = request.get_json(force=True)
+        due = str(payload.get("due", ""))
+        return jsonify({"ok": True, "task": obsidian_tasks.reschedule_task(CFG, task_id, due)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
 def _speak_preview(text: str) -> None:
     try:
         from voice_assistant import speak
@@ -368,6 +403,7 @@ def assistant_loop():
     from voice_assistant import (
         ASSISTANT_NAME,
         ask_ai,
+        expects_follow_up,
         init_scenario_engine,
         load_history,
         record_audio,
@@ -388,6 +424,7 @@ def assistant_loop():
     wake_started = start_wake_word_listener()
     hotkey_registered = False
     pending_activation = False
+    conversation_open_until = 0.0
 
     def activate_from_hotkey():
         emit("log", {"level": "system", "text": f"Hotkey {hotkey.upper()} pressed."})
@@ -405,9 +442,16 @@ def assistant_loop():
     emit("state", {"state": "idle"})
 
     while True:
+        conversation_cfg = CFG.get("conversation", {}) or {}
+        follow_up_enabled = bool(conversation_cfg.get("follow_up_listening", True))
+        follow_up_timeout = float(conversation_cfg.get("follow_up_timeout_seconds", 120) or 120)
+        conversation_open = follow_up_enabled and time.monotonic() < conversation_open_until
+
         # Wait for hotkey or wake word
         if pending_activation:
             pending_activation = False
+        elif conversation_open:
+            pass
         elif hotkey_registered or wake_started:
             _wake_event.clear()
             _wake_event.wait()
@@ -416,8 +460,17 @@ def assistant_loop():
         time.sleep(0.05)
 
         # --- Record ---
-        audio_path = record_audio()
+        wait_for_speech = None
+        if conversation_open:
+            wait_for_speech = max(1, conversation_open_until - time.monotonic())
+            emit("log", {"level": "system", "text": "Listening for your reply."})
+        audio_path = record_audio(wait_for_speech_seconds=wait_for_speech)
         if not audio_path:
+            if conversation_open:
+                conversation_open_until = 0.0
+                emit("log", {"level": "system", "text": "Follow-up window closed. Wake word or hotkey required again."})
+                emit("state", {"state": "idle"})
+                continue
             emit("log", {"level": "warn", "text": "No audio detected — try again."})
             emit("state", {"state": "idle"})
             continue
@@ -440,7 +493,9 @@ def assistant_loop():
 
         # --- Ask Claude ---
         try:
-            reply, history = ask_ai(text, history)
+            result = ask_ai(text, history, speak_response=True)
+            reply = result.reply
+            history = result.history
             save_history(history)
             emit("response", {"text": reply})
         except Exception as e:
@@ -451,9 +506,15 @@ def assistant_loop():
             continue
 
         # --- Speak ---
-        pending_activation = speak(reply)
+        pending_activation = result.interrupted if result.spoke else speak(reply)
         if pending_activation:
             emit("log", {"level": "system", "text": "Listening again after interruption."})
+            conversation_open_until = 0.0
+        elif follow_up_enabled and expects_follow_up(reply):
+            conversation_open_until = time.monotonic() + follow_up_timeout
+            emit("log", {"level": "system", "text": f"Follow-up listening open for {int(follow_up_timeout)} seconds."})
+        else:
+            conversation_open_until = 0.0
 
 # ─── System tray (optional) ───────────────────────────────────────────────────
 

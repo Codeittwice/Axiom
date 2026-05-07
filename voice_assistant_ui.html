@@ -874,6 +874,7 @@
       <div class="tabs">
         <button class="tab-btn active" data-tab="live">Live</button>
         <button class="tab-btn" data-tab="projects">Projects</button>
+        <button class="tab-btn" data-tab="tasks">Tasks</button>
         <button class="tab-btn" data-tab="scenarios">Scenarios</button>
         <button class="tab-btn" data-tab="settings">Settings</button>
         <button class="tab-btn" data-tab="history">History</button>
@@ -1016,6 +1017,38 @@
         </div>
       </section>
 
+      <section class="view" id="view-tasks">
+        <div class="ops-panel">
+          <div class="ops-head">
+            <span>// TASKS</span><span class="toast" id="tasksToast"></span>
+          </div>
+          <div class="ops-grid">
+            <div class="field">
+              <label>Task</label><input id="taskText" placeholder="Finish lab report" />
+            </div>
+            <div class="field">
+              <label>Due</label><input id="taskDue" placeholder="2026-05-08" />
+            </div>
+            <div class="field">
+              <label>Priority</label
+              ><select id="taskPriority">
+                <option value=""></option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="cmd-btn primary" id="captureTaskBtn">
+              Capture Task
+            </button>
+            <button class="cmd-btn" id="refreshTasksBtn">Refresh</button>
+          </div>
+          <div class="data-list" id="tasksList"></div>
+        </div>
+      </section>
+
       <section class="view" id="view-scenarios">
         <div class="ops-panel">
           <div class="ops-head">
@@ -1088,6 +1121,17 @@
             <div class="field">
               <label>Wake Threshold</label
               ><input id="wakeThreshold" type="number" step="0.05" />
+            </div>
+            <div class="field">
+              <label>Follow-up Listening</label
+              ><select id="followUpListening">
+                <option value="true">enabled</option>
+                <option value="false">disabled</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Follow-up Timeout</label
+              ><input id="followUpTimeout" type="number" step="5" />
             </div>
           </div>
           <div class="field">
@@ -1250,6 +1294,7 @@
       let currentConfig = null;
       let currentProjects = {};
       let currentScenarios = {};
+      let currentTasks = [];
 
       function pretty(obj) {
         return JSON.stringify(obj, null, 2);
@@ -1310,6 +1355,16 @@
         });
       }
 
+      function taskMeta(item) {
+        const parts = [];
+        if (item.due) parts.push(`due ${item.due}`);
+        if (item.priority) parts.push(item.priority);
+        if (item.course) parts.push(item.course);
+        else if (item.project) parts.push(item.project);
+        if (item.source) parts.push(item.source);
+        return parts.join(" · ");
+      }
+
       async function loadDashboard() {
         const data = await api("/api/dashboard");
         const schedule = data.schedule || {};
@@ -1329,7 +1384,8 @@
           "Tasks",
           (todos.items || []).map((item) => ({
             text: item.text || "",
-            meta: item.source || "",
+            meta: taskMeta(item),
+            kind: item.priority || "",
           })),
           todos.error || "No open tasks",
         );
@@ -1366,6 +1422,73 @@
           emailRows,
           email.error || "No unread count",
         );
+      }
+
+      function renderTasks() {
+        const list = document.getElementById("tasksList");
+        list.innerHTML = "";
+        currentTasks.forEach((task) => {
+          const row = document.createElement("div");
+          row.className = "data-row";
+          row.innerHTML = `<div><div class="data-title">${escHtml(task.text || "")}</div><div class="data-meta">${escHtml(taskMeta(task))}${task.line ? ` · line ${escHtml(task.line)}` : ""}</div></div><div class="btn-row"><button class="cmd-btn" data-action="done">Done</button><button class="cmd-btn" data-action="tomorrow">+1d</button></div>`;
+          row.querySelector('[data-action="done"]').onclick = () =>
+            completeTask(task.id).catch((e) => toast("tasksToast", e.message));
+          row.querySelector('[data-action="tomorrow"]').onclick = () =>
+            rescheduleTask(task.id, tomorrowDate()).catch((e) =>
+              toast("tasksToast", e.message),
+            );
+          list.appendChild(row);
+        });
+      }
+
+      async function loadTasks() {
+        const data = await api("/api/obsidian/tasks?status=open&limit=80");
+        currentTasks = data.items || [];
+        renderTasks();
+        toast("tasksToast", data.error || `${currentTasks.length} open`);
+      }
+
+      async function captureTask() {
+        const text = document.getElementById("taskText").value.trim();
+        if (!text) return toast("tasksToast", "Task required");
+        await api("/api/obsidian/capture", {
+          method: "POST",
+          body: JSON.stringify({
+            text,
+            due: document.getElementById("taskDue").value.trim(),
+            priority: document.getElementById("taskPriority").value,
+          }),
+        });
+        document.getElementById("taskText").value = "";
+        await loadTasks();
+        await loadDashboard();
+        toast("tasksToast", "Captured");
+      }
+
+      async function completeTask(id) {
+        await api(`/api/obsidian/tasks/${encodeURIComponent(id)}/complete`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await loadTasks();
+        await loadDashboard();
+        toast("tasksToast", "Done");
+      }
+
+      async function rescheduleTask(id, due) {
+        await api(`/api/obsidian/tasks/${encodeURIComponent(id)}/reschedule`, {
+          method: "POST",
+          body: JSON.stringify({ due }),
+        });
+        await loadTasks();
+        await loadDashboard();
+        toast("tasksToast", due);
+      }
+
+      function tomorrowDate() {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().slice(0, 10);
       }
 
       async function loadConfig() {
@@ -1532,6 +1655,11 @@
         document.getElementById("wakeModel").value = c.wake_word?.model || "";
         document.getElementById("wakeThreshold").value =
           c.wake_word?.threshold ?? 0.5;
+        document.getElementById("followUpListening").value = String(
+          c.conversation?.follow_up_listening ?? true,
+        );
+        document.getElementById("followUpTimeout").value =
+          c.conversation?.follow_up_timeout_seconds ?? 120;
         document.getElementById("configEditor").value = pretty(c);
       }
 
@@ -1541,6 +1669,7 @@
         edited.gemini = edited.gemini || {};
         edited.tts = edited.tts || {};
         edited.wake_word = edited.wake_word || {};
+        edited.conversation = edited.conversation || {};
         edited.assistant.name = document
           .getElementById("assistantName")
           .value.trim();
@@ -1561,6 +1690,11 @@
           .value.trim();
         edited.wake_word.threshold = Number(
           document.getElementById("wakeThreshold").value || 0.5,
+        );
+        edited.conversation.follow_up_listening =
+          document.getElementById("followUpListening").value === "true";
+        edited.conversation.follow_up_timeout_seconds = Number(
+          document.getElementById("followUpTimeout").value || 120,
         );
         await api("/api/config", {
           method: "POST",
@@ -1606,6 +1740,7 @@
             .getElementById(`view-${btn.dataset.tab}`)
             .classList.add("active");
           setWidgetMode(btn.dataset.tab);
+          if (btn.dataset.tab === "tasks") await loadTasks();
           if (btn.dataset.tab === "history") await loadHistory();
         });
       });
@@ -1614,6 +1749,10 @@
         saveProject().catch((e) => toast("projectsToast", e.message));
       document.getElementById("deleteProjectBtn").onclick = () =>
         deleteProject().catch((e) => toast("projectsToast", e.message));
+      document.getElementById("captureTaskBtn").onclick = () =>
+        captureTask().catch((e) => toast("tasksToast", e.message));
+      document.getElementById("refreshTasksBtn").onclick = () =>
+        loadTasks().catch((e) => toast("tasksToast", e.message));
       document.getElementById("saveScenarioBtn").onclick = () =>
         saveScenario().catch((e) => toast("scenariosToast", e.message));
       document.getElementById("deleteScenarioBtn").onclick = () =>

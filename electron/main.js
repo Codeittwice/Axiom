@@ -7,7 +7,12 @@ const http = require('http');
 const APP_PORT = Number(process.env.AXIOM_PORT || 5000);
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const ROOT_DIR = path.join(__dirname, '..');
+const DEV_USER_DATA = path.join(ROOT_DIR, '.axiom-user-data');
 const ICON_PATH = path.join(__dirname, 'build', 'icon.ico');
+
+if (!app.isPackaged) {
+  app.setPath('userData', DEV_USER_DATA);
+}
 
 let pythonProc = null;
 let mainWindow = null;

@@ -545,3 +545,92 @@ Prepare the Obsidian implementation before coding the task index, and give AXIOM
 - [ ] Add voice tools for capture, today/upcoming tasks, complete task, and reschedule task.
 - [ ] Add `obsidian.task_sources` so AXIOM can scan both the university vault and the dev apps folder.
 - [ ] Add a full Tasks tab or modal for complete task descriptions and actions.
+
+---
+
+## 2026-05-07 - Voice Latency Pass 1: Gemini-to-TTS Streaming
+
+### Goal
+Reduce perceived TTS latency by starting spoken output before ordinary Gemini replies have fully completed.
+
+### Implementation log
+
+- Added `tts.gemini_streaming` to `config.yaml`.
+- Kept the active TTS engine on Edge after testing the local `pyttsx3` voice; streaming remains the latency improvement path.
+- Added `AIResult` so the assistant loop can tell whether a reply was already spoken during generation.
+- `ask_ai(..., speak_response=True)` now streams normal conversational replies from Gemini.
+- Added a TTS queue worker that speaks completed sentence chunks while Gemini continues producing the rest of the answer.
+- Tool-heavy/local-control requests stay on the non-streaming path so Gemini function calls remain reliable.
+- Existing interrupt behavior is preserved: hotkey/wake-word activation can still stop playback and immediately listen again.
+
+### Verification
+
+- `python -m py_compile voice_assistant.py server.py` passes.
+- `python -m unittest tests.test_tools` passes: 7 tests.
+
+### Next implementation slice
+
+- Create `obsidian_tasks.py` parser/indexer.
+- Add REST endpoints for task listing, capture, completion, and rescheduling.
+- Replace the Live Tasks widget backend with normalized Obsidian task data.
+
+---
+
+## 2026-05-07 - Phase 6c: Obsidian Tasks Implementation
+
+### Goal
+Turn the Obsidian plan into a working local markdown task index with voice, REST, and UI access.
+
+### Implementation log
+
+- Added `obsidian_tasks.py` with markdown task parsing, due dates, priorities, tags, project/course inference, stable IDs, and vault path safety checks.
+- Added safe task capture, completion, and rescheduling helpers that update exact task lines inside the configured vault.
+- Added change archive entries to `AXIOM Done.md` for complete/reschedule operations.
+- Replaced the dashboard Tasks widget backend with normalized Obsidian task data.
+- Added REST endpoints for task listing, today, capture, complete, and reschedule.
+- Added Gemini tools for `capture_task`, `today_tasks`, `upcoming_tasks`, `complete_task`, `reschedule_task`, and `obsidian_status`.
+- Added direct voice routing for common task/status listing requests.
+- Added a Tasks tab in the UI with capture, refresh, complete, and quick reschedule controls.
+- Added `obsidian.task_sources` support for the future multi-source task panel while preserving `tasks_scan_paths`.
+
+### Acceptance criteria status
+
+- [x] Works with plain Obsidian markdown, no plugin required.
+- [x] Task scans stay inside `obsidian.vault_path`.
+- [x] Dashboard Tasks widget shows normalized open tasks.
+- [x] Voice can capture, list, complete, and reschedule tasks through tools.
+- [x] AXIOM can explain the workflow with `explain_obsidian_workflow`.
+- [x] Unit tests cover parsing, path safety, and line updates.
+
+### Verification
+
+- `python -m py_compile voice_assistant.py server.py tools.py obsidian_tasks.py tests/test_obsidian_tasks.py` passes.
+- `python -m unittest tests.test_tools tests.test_obsidian_tasks` passes: 10 tests.
+
+### Remaining before packaging
+
+- Live OAuth validation for Google/Gmail/Spotify on the user's machine.
+- Real-world voice pass for task capture, completion matching, and TTS latency feel.
+- Wake-word/hotkey rebinding polish after settings changes.
+- Installer packaging intentionally deferred.
+
+---
+
+## 2026-05-07 - Conversational Follow-up Listening
+
+### Goal
+Make AXIOM feel like a conversation: when AXIOM asks a follow-up question, the user can answer directly without saying the wake word again.
+
+### Implementation log
+
+- Added `conversation.follow_up_listening` and `conversation.follow_up_timeout_seconds` to `config.yaml`.
+- Added `record_audio(wait_for_speech_seconds=...)` so follow-up mode can wait up to 2 minutes for speech to begin while keeping the normal utterance length cap.
+- Added `expects_follow_up()` to detect direct assistant questions.
+- Updated the assistant loop so follow-up questions open a temporary listening window; silence closes it and returns to wake-word/hotkey mode.
+- Preserved interrupt behavior: interrupting speech still immediately listens again.
+- Added Settings UI controls for follow-up listening and timeout.
+
+### Verification
+
+- `python -m py_compile voice_assistant.py server.py` passes.
+- UI script syntax check passes with Node.

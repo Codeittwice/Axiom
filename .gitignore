@@ -67,6 +67,7 @@ env.bak/
 venv.bak/
 
 # Tooling caches
+.npm-cache/
 .mypy_cache/
 .dmypy.json
 dmypy.json
@@ -83,6 +84,7 @@ dmypy.json
 tempCodeRunnerFile.py
 
 # Common app/framework local state
+.axiom-user-data/
 instance/
 .webassets-cache
 db.sqlite3
