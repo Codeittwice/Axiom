@@ -31,8 +31,13 @@ function backendCommand() {
     return { command: packagedBackend, args: [], cwd: path.dirname(packagedBackend) };
   }
 
+  // Auto-detect venv — prefer .venv/Scripts/python.exe if it exists
+  const venvPython = path.join(ROOT_DIR, '.venv', 'Scripts', 'python.exe');
+  const pythonCmd = process.env.AXIOM_PYTHON ||
+    (fs.existsSync(venvPython) ? venvPython : 'python');
+
   return {
-    command: process.env.AXIOM_PYTHON || 'python',
+    command: pythonCmd,
     args: ['server.py'],
     cwd: ROOT_DIR,
   };

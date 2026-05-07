@@ -9,6 +9,11 @@ import sys
 # Ensure working directory is this file's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+# Auto-activate .venv if present and not already running inside it
+_venv_python = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "Scripts", "pythonw.exe")
+if os.path.exists(_venv_python) and os.path.abspath(sys.executable) != os.path.abspath(_venv_python):
+    os.execv(_venv_python, [_venv_python] + sys.argv)
+
 # Delegate entirely to server.py
 import server  # noqa: F401 — runs __main__ block via import side-effect
 
