@@ -2135,6 +2135,11 @@
 
       // ── Backend events ─────────────────────────────────────────────────────────
 
+      // Tell Electron to close the splash and show this window once fully ready
+      socket.on("system_ready", () => {
+        if (window.axiomWindow?.systemReady) window.axiomWindow.systemReady();
+      });
+
       socket.on("state", (data) => {
         setState(data.state);
       });

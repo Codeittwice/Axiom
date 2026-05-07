@@ -147,8 +147,7 @@ function createWindow(startMinimized = false) {
   mainWindow.loadURL(APP_URL);
 
   mainWindow.once('ready-to-show', () => {
-    closeSplash();
-    if (!startMinimized) mainWindow.show();
+    // Keep splash open — wait for system:ready (backend fully initialised)
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -207,6 +206,12 @@ function bindIpc() {
   ipcMain.handle('window:quit', () => {
     isQuitting = true;
     app.quit();
+  });
+  ipcMain.on('system:ready', () => {
+    closeSplash();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+    }
   });
 }
 

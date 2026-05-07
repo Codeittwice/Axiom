@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('axiomWindow', {
   },
   close: () => ipcRenderer.invoke('window:close'),
   quit: () => ipcRenderer.invoke('window:quit'),
+  systemReady: () => ipcRenderer.send('system:ready'),
 });
