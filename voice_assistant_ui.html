@@ -50,10 +50,10 @@
       }
       .wrap {
         width: 100%;
-        max-width: 720px;
+        max-width: min(1600px, calc(100vw - 2rem));
         display: flex;
         flex-direction: column;
-        gap: 1.5rem;
+        gap: 1.25rem;
         position: relative;
       }
       body.electron {
@@ -579,7 +579,7 @@
       /* tabs + config surfaces */
       .tabs {
         display: grid;
-        grid-template-columns: repeat(6, 1fr);
+        grid-template-columns: repeat(7, 1fr);
         gap: 0.35rem;
       }
       body.with-widgets .tabs {
@@ -749,28 +749,24 @@
         min-height: 1rem;
       }
       body.with-widgets .wrap {
-        max-width: min(1500px, calc(100vw - 2rem));
         gap: 1.25rem;
       }
       .live-shell {
         display: flex;
         flex-direction: column;
-        gap: 1.5rem;
+        gap: 1.25rem;
       }
       .live-core {
         display: flex;
         flex-direction: column;
-        gap: 1.5rem;
+        gap: 1.25rem;
         min-width: 0;
       }
       body.with-widgets .live-shell {
         display: grid;
-        grid-template-columns: minmax(300px, 340px) minmax(640px, 1fr) minmax(
-            300px,
-            340px
-          );
-        column-gap: 1.5rem;
-        align-items: stretch;
+        grid-template-columns: minmax(0, 260px) minmax(0, 1fr) minmax(0, 260px);
+        column-gap: 1.25rem;
+        align-items: start;
       }
       .side-panel {
         display: none;
@@ -891,12 +887,66 @@
         font-size: 1.6rem;
         color: var(--green);
       }
-      @media (max-width: 840px) {
-        body.with-widgets .wrap {
-          max-width: 720px;
+      /* ── Responsive breakpoints ─────────────────────────────────────────── */
+
+      /* Tablet: hide left panel, keep center + right */
+      @media (max-width: 1100px) {
+        body.with-widgets .live-shell {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 230px);
+        }
+        body.with-widgets .side-panel.left {
+          display: none;
+        }
+      }
+
+      /* Narrow tablet / large phone: single column, collapse both panels */
+      @media (max-width: 720px) {
+        body, body.electron {
+          padding: 0.5rem;
+        }
+        .wrap {
+          max-width: 100%;
+          gap: 0.75rem;
         }
         body.with-widgets .live-shell {
-          display: flex;
+          grid-template-columns: 1fr;
+        }
+        body.with-widgets .side-panel {
+          display: none;
+        }
+        .tabs {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        .header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.5rem;
+        }
+        .header-meta {
+          display: none;
+        }
+        .sysbar-stack {
+          display: none;
+        }
+        .viz-panel {
+          padding: 1.25rem;
+        }
+      }
+
+      /* Phone: tighten further */
+      @media (max-width: 480px) {
+        .tabs {
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .sysbar {
+          font-size: 0.6rem;
+          gap: 0.5rem;
+        }
+        .sysbar-left {
+          gap: 0.75rem;
+        }
+        .brand-name {
+          font-size: 1.8rem;
         }
       }
 
@@ -998,27 +1048,45 @@
       /* ── Phase 2 boot overlay ───────────────────────────────────────────── */
       #boot-overlay {
         position: fixed; inset: 0; z-index: 9999;
-        background: var(--bg);
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center; gap: 0;
+        background: rgba(3,5,14,.88);
+        backdrop-filter: blur(4px);
+        display: flex; align-items: center; justify-content: center;
         transition: opacity 0.7s ease;
       }
       #boot-overlay.done { opacity: 0; pointer-events: none; }
 
+      .boot-ov-card {
+        background: var(--panel);
+        border: 1px solid rgba(0,212,255,.18);
+        border-radius: 3px;
+        padding: 2.5rem 2rem 2rem;
+        width: min(400px, 90vw);
+        display: flex; flex-direction: column; align-items: center;
+        box-shadow: 0 0 60px rgba(0,212,255,.07), 0 24px 64px rgba(0,0,0,.6);
+        position: relative;
+      }
+      .boot-ov-card::before, .boot-ov-card::after {
+        content: ''; position: absolute; width: 14px; height: 14px;
+        border-color: rgba(0,212,255,.45); border-style: solid;
+      }
+      .boot-ov-card::before { top:8px; right:8px; border-width:1px 1px 0 0; }
+      .boot-ov-card::after  { bottom:8px; left:8px; border-width:0 0 1px 1px; }
+
       .boot-ov-ring {
-        width: 90px; height: 90px;
+        width: 80px; height: 80px;
         border-radius: 50%;
         border: 2px solid rgba(0,212,255,.15);
         border-top-color: var(--accent);
         border-right-color: var(--accent);
         animation: boot-spin 1.2s linear infinite;
-        margin-bottom: 24px;
-        box-shadow: 0 0 20px rgba(0,212,255,.15);
+        margin-bottom: 20px;
+        box-shadow: 0 0 20px rgba(0,212,255,.12);
+        position: relative;
       }
       .boot-ov-ring::after {
         content: '';
         position: absolute;
-        inset: 8px;
+        inset: 7px;
         border-radius: 50%;
         border: 1px solid rgba(0,102,255,.2);
         border-bottom-color: var(--accent2);
@@ -1026,38 +1094,59 @@
       }
       .boot-ov-label {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 1.6rem; letter-spacing: .4em;
+        font-size: 1.5rem; letter-spacing: .4em;
         color: var(--accent);
         text-shadow: 0 0 20px rgba(0,212,255,.4);
-        margin-bottom: 6px;
+        margin-bottom: 4px;
       }
       .boot-ov-sub {
         font-family: 'Share Tech Mono', monospace;
-        font-size: .55rem; letter-spacing: .2em;
+        font-size: .52rem; letter-spacing: .2em;
         color: var(--muted);
-        margin-bottom: 28px;
+        margin-bottom: 20px;
       }
+      .boot-ov-log {
+        width: 100%;
+        height: 82px;
+        overflow: hidden;
+        border: 1px solid rgba(0,212,255,.07);
+        background: rgba(0,212,255,.02);
+        border-radius: 2px;
+        padding: 7px 10px;
+        margin-bottom: 16px;
+        display: flex; flex-direction: column-reverse;
+      }
+      .boot-ov-log-line {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: .58rem; letter-spacing: .06em; line-height: 1.7;
+        color: var(--muted);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .boot-ov-log-line.active { color: var(--accent); }
+      .boot-ov-log-line.done   { color: rgba(0,255,179,.55); }
       .boot-ov-bar {
-        width: 220px; height: 2px;
+        width: 100%; height: 2px;
         background: rgba(0,212,255,.1); border-radius: 2px; overflow: hidden;
       }
       .boot-ov-bar-fill {
         height: 100%;
         background: linear-gradient(90deg, var(--accent2), var(--accent));
         box-shadow: 0 0 6px var(--accent);
-        animation: boot-bar-fill 3s ease forwards;
+        width: 0%; transition: width .5s ease;
       }
       @keyframes boot-spin     { to { transform: rotate(360deg);  } }
       @keyframes boot-spin-rev { to { transform: rotate(-360deg); } }
-      @keyframes boot-bar-fill { from { width: 0% } to { width: 85% } }
     </style>
   </head>
   <body>
     <div id="boot-overlay">
-      <div class="boot-ov-ring"></div>
-      <div class="boot-ov-label">AXIOM</div>
-      <div class="boot-ov-sub">SYNCHRONISING SYSTEMS…</div>
-      <div class="boot-ov-bar"><div class="boot-ov-bar-fill"></div></div>
+      <div class="boot-ov-card">
+        <div class="boot-ov-ring"></div>
+        <div class="boot-ov-label">AXIOM</div>
+        <div class="boot-ov-sub">INITIALISING SYSTEMS…</div>
+        <div class="boot-ov-log" id="bootLog"></div>
+        <div class="boot-ov-bar"><div class="boot-ov-bar-fill" id="bootBarFill"></div></div>
+      </div>
     </div>
     <div class="scanline"></div>
     <div class="wrap">
@@ -1080,8 +1169,8 @@
             ><span class="sysbar-dot" id="sysDot"></span
             ><span id="sysStatus">CONNECTING</span></span
           >
-          <span>BUILD v0.2.0</span>
-          <span>STACK: WHISPER · GEMINI · EDGE-TTS</span>
+          <span class="sysbar-build">BUILD v0.2.0</span>
+          <span class="sysbar-stack">STACK: WHISPER · GEMINI · EDGE-TTS</span>
         </div>
         <span id="clock">--:--:--</span>
       </div>
@@ -2144,9 +2233,34 @@
       });
 
       // ── Backend events ─────────────────────────────────────────────────────────
+      // ── Boot overlay log feed ───────────────────────────────────────────────
+      const _bootLog = document.getElementById("bootLog");
+      const _bootBar = document.getElementById("bootBarFill");
+      let _bootLogCount = 0;
+      const _BOOT_STEPS = 8; // approximate number of log lines before ready
+
+      function _bootAppendLog(text) {
+        if (!_bootLog) return;
+        const prev = _bootLog.querySelector(".active");
+        if (prev) prev.classList.replace("active", "done");
+        const el = document.createElement("div");
+        el.className = "boot-ov-log-line active";
+        el.textContent = "> " + text;
+        _bootLog.insertBefore(el, _bootLog.firstChild);
+        while (_bootLog.children.length > 5) _bootLog.removeChild(_bootLog.lastChild);
+        _bootLogCount++;
+        if (_bootBar) {
+          const pct = Math.min(90, Math.round((_bootLogCount / _BOOT_STEPS) * 90));
+          _bootBar.style.width = pct + "%";
+        }
+      }
+
       function _dismissBootOverlay() {
-        const ov = document.getElementById("boot-overlay");
-        if (ov) { ov.classList.add("done"); setTimeout(() => ov.remove(), 750); }
+        if (_bootBar) _bootBar.style.width = "100%";
+        setTimeout(() => {
+          const ov = document.getElementById("boot-overlay");
+          if (ov) { ov.classList.add("done"); setTimeout(() => ov.remove(), 750); }
+        }, 300);
       }
       // system_ready fires only after whisper + wake word are fully loaded
       socket.on("system_ready", _dismissBootOverlay);
@@ -2180,6 +2294,7 @@
       socket.on("log", (data) => {
         const role = data.level || "system";
         addLog(role, data.text);
+        if (document.getElementById("boot-overlay")) _bootAppendLog(data.text);
       });
 
       socket.on("error", (data) => {
