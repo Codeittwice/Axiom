@@ -2057,19 +2057,6 @@
         .then(decoded => { _clickBuffer = decoded; })
         .catch(() => {});
 
-      function playUIClick() {
-        if (!_clickBuffer) return;
-        try {
-          const src = _uiAc.createBufferSource();
-          const gain = _uiAc.createGain();
-          src.buffer = _clickBuffer;
-          gain.gain.value = 0.3;
-          src.connect(gain); gain.connect(_uiAc.destination);
-          src.start();
-        } catch (_) {}
-      }
-
-      // Welcome chime — plays as the main window appears
       function playWelcomeChime() {
         try {
           const t = _uiAc.currentTime;
@@ -2085,6 +2072,19 @@
           });
         } catch (_) {}
       }
+
+      function playUIClick() {
+        if (!_clickBuffer) return;
+        try {
+          const src = _uiAc.createBufferSource();
+          const gain = _uiAc.createGain();
+          src.buffer = _clickBuffer;
+          gain.gain.value = 0.3;
+          src.connect(gain); gain.connect(_uiAc.destination);
+          src.start();
+        } catch (_) {}
+      }
+
 
       document.querySelectorAll(".tab-btn").forEach((btn) => {
         btn.addEventListener("click", async () => {

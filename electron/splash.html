@@ -266,17 +266,6 @@
     if (_ambTimer) { clearInterval(_ambTimer); _ambTimer = null; }
   }
 
-  // Ready chime — C5 E5 G5 major triad, warm long decay
-  function playReadyChime() {
-    stopAmbient();
-    const t = _ac.currentTime;
-    [523.25, 659.25, 783.99].forEach((freq, i) => {
-      const s = t + i * 0.16;
-      _sine(freq,     s, 0.13, 2.4);
-      _sine(freq * 2, s, 0.04, 1.3);
-    });
-  }
-
   // ── Boot sequence ──────────────────────────────────────────────────────────
   const logInner = document.getElementById('logInner');
   const fill     = document.getElementById('progressFill');
@@ -296,12 +285,6 @@
     logInner.insertBefore(el, logInner.firstChild);
     while (logInner.children.length > 5) logInner.removeChild(logInner.lastChild);
     lineIdx++;
-    if (lineIdx >= LINES.length) {
-      setTimeout(() => {
-        playReadyChime();
-        speak('Systems online. Ready when you are, ' + USER_NAME + '.', 500);
-      }, 200);
-    }
   }
 
   function updateProgress() {
