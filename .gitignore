@@ -7,6 +7,8 @@ data/
 custom_models/
 *.wav
 *.mp3
+!sounds/*.wav
+!sounds/*.mp3
 node_modules/
 .claude/
 
