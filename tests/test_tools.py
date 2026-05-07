@@ -20,6 +20,7 @@ class Phase6AdvancedToolsTest(unittest.TestCase):
             patch.object(tools, "_refresh_config_from_disk", return_value=disabled_cfg),
         ):
             self.assertIn("Spotify", tools.spotify_now_playing())
+            self.assertIn("Spotify status", tools.spotify_status())
             self.assertIn("Gmail", tools.unread_count())
             self.assertIn("Gmail", tools.new_emails())
             self.assertIn("gmail.enabled is false", tools.gmail_status())

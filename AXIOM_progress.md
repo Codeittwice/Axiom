@@ -634,3 +634,33 @@ Make AXIOM feel like a conversation: when AXIOM asks a follow-up question, the u
 
 - `python -m py_compile voice_assistant.py server.py` passes.
 - UI script syntax check passes with Node.
+
+---
+
+## 2026-05-07 - Spotify Configuration Flow
+
+### Goal
+Make Spotify setup diagnosable and connectable instead of only exposing playback commands.
+
+### Implementation log
+
+- Added Spotify configuration status checks that report enabled/client-id/client-secret/token state without exposing secrets.
+- Added `connect_spotify` and `spotify_status` voice tools.
+- Added `GET /api/spotify/status` and `POST /api/spotify/connect`.
+- Added Settings UI buttons for Spotify Status and Connect Spotify.
+- Added direct voice routing for Spotify connect/status/now-playing/basic playback controls.
+- Kept `spotify.client_secret` empty in tracked config; local secrets should live in `.env` as `SPOTIPY_CLIENT_SECRET`.
+
+---
+
+## 2026-05-07 - Task Priority UI
+
+### Goal
+Use the voice feedback about task priorities to make the main page visually show what to tackle first.
+
+### Implementation log
+
+- Grouped dashboard tasks into High, Medium, Low, and Unprioritized sections.
+- Added priority dots and color accents: high is red, medium is yellow/orange, low is green.
+- Mirrored the same grouped priority sections in the full Tasks tab.
+- Changed task sorting so priority wins before due date.

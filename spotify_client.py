@@ -26,20 +26,44 @@ def _spotify(config: dict | None = None) -> dict:
     return (_cfg(config).get("spotify", {}) or {})
 
 
-def _client(config: dict | None = None):
+def _settings(config: dict | None = None) -> dict:
     cfg = _spotify(config)
-    if not cfg.get("enabled", False):
+    return {
+        "enabled": bool(cfg.get("enabled", False)),
+        "client_id": cfg.get("client_id") or os.getenv("SPOTIPY_CLIENT_ID", ""),
+        "client_secret": cfg.get("client_secret") or os.getenv("SPOTIPY_CLIENT_SECRET", ""),
+        "redirect_uri": cfg.get("redirect_uri") or os.getenv("SPOTIPY_REDIRECT_URI", ""),
+        "cache_path": cfg.get("cache_path") or "secrets/spotify_token.json",
+    }
+
+
+def status(config: dict | None = None) -> dict:
+    settings = _settings(config)
+    token = Path(settings["cache_path"])
+    return {
+        "enabled": settings["enabled"],
+        "has_client_id": bool(settings["client_id"]),
+        "has_client_secret": bool(settings["client_secret"]),
+        "redirect_uri": settings["redirect_uri"],
+        "token_file": str(token),
+        "connected": token.exists(),
+    }
+
+
+def _client(config: dict | None = None):
+    settings = _settings(config)
+    if not settings["enabled"]:
         raise RuntimeError("Spotify is disabled. Set spotify.enabled to true in config.yaml.")
 
-    client_id = cfg.get("client_id") or os.getenv("SPOTIPY_CLIENT_ID")
-    client_secret = cfg.get("client_secret") or os.getenv("SPOTIPY_CLIENT_SECRET")
-    redirect_uri = cfg.get("redirect_uri") or os.getenv("SPOTIPY_REDIRECT_URI")
-    cache_path = cfg.get("cache_path") or "secrets/spotify_token.json"
+    client_id = settings["client_id"]
+    client_secret = settings["client_secret"]
+    redirect_uri = settings["redirect_uri"]
+    cache_path = settings["cache_path"]
 
     if not client_id or not client_secret or not redirect_uri:
         raise RuntimeError(
-            "Spotify is not configured. Add spotify.client_id, client_secret, "
-            "and redirect_uri to config.yaml."
+            "Spotify is not configured. Add SPOTIPY_CLIENT_SECRET to .env, "
+            "and make sure spotify.client_id and redirect_uri are set."
         )
 
     try:
@@ -58,6 +82,14 @@ def _client(config: dict | None = None):
         open_browser=True,
     )
     return spotipy.Spotify(auth_manager=auth)
+
+
+def connect(config: dict | None = None) -> dict:
+    sp = _client(config)
+    token = sp.auth_manager.get_access_token(as_dict=False)
+    if not token:
+        raise RuntimeError("Spotify OAuth did not return an access token.")
+    return status(config) | {"connected": True}
 
 
 def _track_summary(track: dict) -> str:

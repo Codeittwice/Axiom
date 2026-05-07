@@ -261,6 +261,24 @@ def api_email_mark_check():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route("/api/spotify/status", methods=["GET"])
+def api_spotify_status():
+    try:
+        import spotify_client
+        return jsonify(spotify_client.status(CFG))
+    except Exception as e:
+        return jsonify({"enabled": False, "connected": False, "error": str(e)})
+
+
+@app.route("/api/spotify/connect", methods=["POST"])
+def api_spotify_connect():
+    try:
+        import spotify_client
+        return jsonify({"ok": True, **spotify_client.connect(CFG)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
 def _dashboard_schedule() -> dict:
     try:
         google = CFG.get("google", {}) or {}

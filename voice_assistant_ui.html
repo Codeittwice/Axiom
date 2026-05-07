@@ -579,7 +579,7 @@
       /* tabs + config surfaces */
       .tabs {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(6, 1fr);
         gap: 0.35rem;
       }
       body.with-widgets .tabs {
@@ -707,6 +707,15 @@
         background: #020509;
         padding: 0.75rem;
       }
+      .data-row.priority-high {
+        border-left: 3px solid var(--red);
+      }
+      .data-row.priority-medium {
+        border-left: 3px solid var(--warn);
+      }
+      .data-row.priority-low {
+        border-left: 3px solid var(--green);
+      }
       .data-title {
         font-weight: 600;
         color: var(--text);
@@ -799,15 +808,77 @@
         flex-direction: column;
         gap: 0.15rem;
         overflow-wrap: anywhere;
+        border-left: 2px solid transparent;
+        padding-left: 0.45rem;
+      }
+      .widget-row-priority {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.35rem;
       }
       .widget-row-count {
         color: var(--text);
         font-size: 0.82rem;
       }
+      .widget-row-high {
+        border-left-color: var(--red);
+      }
+      .widget-row-medium {
+        border-left-color: var(--warn);
+      }
+      .widget-row-low {
+        border-left-color: var(--green);
+      }
+      .widget-row-body {
+        min-width: 0;
+      }
       .widget-row .meta {
         font-family: "Share Tech Mono", monospace;
         font-size: 0.6rem;
         color: var(--muted);
+      }
+      .priority-dot {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        margin-top: 0.25rem;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: var(--muted);
+      }
+      .priority-dot.high {
+        background: var(--red);
+        box-shadow: 0 0 10px rgba(255, 68, 102, 0.28);
+      }
+      .priority-dot.medium {
+        background: var(--warn);
+        box-shadow: 0 0 10px rgba(255, 107, 53, 0.22);
+      }
+      .priority-dot.low {
+        background: var(--green);
+        box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+      }
+      .priority-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.58rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .task-section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .task-section-title,
+      .widget-section-title {
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.62rem;
+        color: var(--muted);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-top: 0.15rem;
       }
       .widget-empty {
         font-family: "Share Tech Mono", monospace;
@@ -1222,6 +1293,14 @@
             <label>Voice Preview</label
             ><input id="voicePreview" value="AXIOM voice preview online." />
           </div>
+          <div class="btn-row">
+            <button class="cmd-btn" id="spotifyStatusBtn">
+              Spotify Status
+            </button>
+            <button class="cmd-btn" id="connectSpotifyBtn">
+              Connect Spotify
+            </button>
+          </div>
           <div class="field">
             <label>Full Config JSON</label
             ><textarea id="configEditor"></textarea>
@@ -1443,12 +1522,29 @@
                 .map(
                   (row) => {
                     const cls = row.kind ? ` widget-row-${row.kind}` : "";
-                    return `<div class="widget-row${cls}"><span>${escHtml(row.text)}</span>${row.meta ? `<span class="meta">${escHtml(row.meta)}</span>` : ""}</div>`;
+                    return `<div class="widget-row${cls}"><div class="widget-row-body"><span>${escHtml(row.text)}</span>${row.meta ? `<span class="meta">${escHtml(row.meta)}</span>` : ""}</div></div>`;
                   },
                 )
                 .join("")
             : `<div class="widget-empty">${escHtml(emptyText)}</div>`;
         el.innerHTML = `<div class="widget-head">${escHtml(title)}</div>${body}`;
+      }
+
+      function renderTaskWidget(id, title, tasks, emptyText = "No open tasks") {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const body = groupedTasks(tasks)
+          .map((group) => {
+            const rows = group.items
+              .map(
+                (task) =>
+                  `<div class="widget-row widget-row-priority widget-row-${priorityKey(task)}">${priorityDot(task.priority)}<div class="widget-row-body"><span>${escHtml(task.text || "")}</span><span class="meta">${escHtml(taskMeta(task))}</span></div></div>`,
+              )
+              .join("");
+            return `<div class="widget-section-title">${escHtml(group.label)}</div>${rows}`;
+          })
+          .join("");
+        el.innerHTML = `<div class="widget-head">${escHtml(title)}</div>${body || `<div class="widget-empty">${escHtml(emptyText)}</div>`}`;
       }
 
       function timeLabel(value) {
@@ -1472,6 +1568,40 @@
         return parts.join(" · ");
       }
 
+      function priorityKey(itemOrValue) {
+        const value =
+          typeof itemOrValue === "string"
+            ? itemOrValue
+            : itemOrValue?.priority || "";
+        return ["high", "medium", "low"].includes(value) ? value : "none";
+      }
+
+      function priorityDot(priority) {
+        const key = priorityKey(priority);
+        if (key === "none") return '<span class="priority-dot"></span>';
+        return `<span class="priority-dot ${key}"></span>`;
+      }
+
+      function priorityChip(priority) {
+        const key = priorityKey(priority);
+        const label = key === "none" ? "normal" : key;
+        return `<span class="priority-chip">${priorityDot(key)}${escHtml(label)}</span>`;
+      }
+
+      function groupedTasks(tasks) {
+        const groups = [
+          { key: "high", label: "High Priority", items: [] },
+          { key: "medium", label: "Medium Priority", items: [] },
+          { key: "low", label: "Low Priority", items: [] },
+          { key: "none", label: "Unprioritized", items: [] },
+        ];
+        (tasks || []).forEach((task) => {
+          const key = priorityKey(task);
+          groups.find((group) => group.key === key).items.push(task);
+        });
+        return groups.filter((group) => group.items.length);
+      }
+
       async function loadDashboard() {
         const data = await api("/api/dashboard");
         const schedule = data.schedule || {};
@@ -1486,14 +1616,10 @@
         );
 
         const todos = data.todos || {};
-        renderWidget(
+        renderTaskWidget(
           "w-todos",
           "Tasks",
-          (todos.items || []).map((item) => ({
-            text: item.text || "",
-            meta: taskMeta(item),
-            kind: item.priority || "",
-          })),
+          todos.items || [],
           todos.error || "No open tasks",
         );
 
@@ -1534,6 +1660,25 @@
       function renderTasks() {
         const list = document.getElementById("tasksList");
         list.innerHTML = "";
+        groupedTasks(currentTasks).forEach((group) => {
+          const section = document.createElement("div");
+          section.className = "task-section";
+          section.innerHTML = `<div class="task-section-title">${escHtml(group.label)}</div>`;
+          group.items.forEach((task) => {
+            const row = document.createElement("div");
+            row.className = `data-row priority-${priorityKey(task)}`;
+            row.innerHTML = `<div><div class="data-title">${priorityChip(task.priority)} ${escHtml(task.text || "")}</div><div class="data-meta">${escHtml(taskMeta(task))}${task.line ? ` · line ${escHtml(task.line)}` : ""}</div></div><div class="btn-row"><button class="cmd-btn" data-action="done">Done</button><button class="cmd-btn" data-action="tomorrow">+1d</button></div>`;
+            row.querySelector('[data-action="done"]').onclick = () =>
+              completeTask(task.id).catch((e) => toast("tasksToast", e.message));
+            row.querySelector('[data-action="tomorrow"]').onclick = () =>
+              rescheduleTask(task.id, tomorrowDate()).catch((e) =>
+                toast("tasksToast", e.message),
+              );
+            section.appendChild(row);
+          });
+          list.appendChild(section);
+        });
+        return;
         currentTasks.forEach((task) => {
           const row = document.createElement("div");
           row.className = "data-row";
@@ -1821,6 +1966,22 @@
         toast("settingsToast", "Preview");
       }
 
+      async function spotifyStatus() {
+        const data = await api("/api/spotify/status");
+        const bits = [
+          data.enabled ? "enabled" : "disabled",
+          data.has_client_id ? "client id" : "missing id",
+          data.has_client_secret ? "secret" : "missing secret",
+          data.connected ? "connected" : "not connected",
+        ];
+        toast("settingsToast", bits.join(" · "));
+      }
+
+      async function connectSpotify() {
+        const data = await api("/api/spotify/connect", { method: "POST" });
+        toast("settingsToast", data.connected ? "Spotify connected" : "Spotify opened");
+      }
+
       async function loadHistory() {
         const data = await api("/api/conversations?limit=80");
         const list = document.getElementById("historyList");
@@ -1873,6 +2034,10 @@
         saveSettings().catch((e) => toast("settingsToast", e.message));
       document.getElementById("previewVoiceBtn").onclick = () =>
         previewVoice().catch((e) => toast("settingsToast", e.message));
+      document.getElementById("spotifyStatusBtn").onclick = () =>
+        spotifyStatus().catch((e) => toast("settingsToast", e.message));
+      document.getElementById("connectSpotifyBtn").onclick = () =>
+        connectSpotify().catch((e) => toast("settingsToast", e.message));
       document.getElementById("refreshHistoryBtn").onclick = () =>
         loadHistory().catch((e) => toast("historyToast", e.message));
       setWidgetMode("live");

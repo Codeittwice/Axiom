@@ -143,8 +143,8 @@ def _sort_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         tasks,
         key=lambda t: (
-            t.get("due") or "9999-12-31",
             priority_rank.get(t.get("priority", ""), 3),
+            t.get("due") or "9999-12-31",
             t.get("source", ""),
             t.get("line", 0),
         ),

@@ -61,6 +61,21 @@ class ObsidianTasksTest(unittest.TestCase):
             with self.assertRaises(obsidian_tasks.ObsidianTaskError):
                 obsidian_tasks.capture_task(config, "No escape")
 
+    def test_priority_sorts_before_due_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            note = root / "Projects" / "AXIOM" / "Tasks.md"
+            note.parent.mkdir(parents=True)
+            note.write_text(
+                "- [ ] Low dated task due:: 2026-05-01 priority:: low\n"
+                "- [ ] High later task due:: 2026-05-20 priority:: high\n",
+                encoding="utf-8",
+            )
+
+            tasks = obsidian_tasks.scan_tasks(cfg(tmp), status="open")
+
+            self.assertEqual(tasks[0]["text"].split(" due::")[0], "High later task")
+
 
 if __name__ == "__main__":
     unittest.main()
