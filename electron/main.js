@@ -104,13 +104,36 @@ function waitForServer(timeoutMs = 30000) {
   });
 }
 
+let splashWindow = null;
+
+function createSplash() {
+  splashWindow = new BrowserWindow({
+    width: 500,
+    height: 560,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: false,
+    backgroundColor: '#03050e',
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
+  splashWindow.center();
+}
+
+function closeSplash() {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+}
+
 function createWindow(startMinimized = false) {
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 1040,
     minWidth: 960,
     minHeight: 760,
-    show: !startMinimized,
+    show: false,   // revealed after splash closes
     frame: false,
     backgroundColor: '#03050e',
     icon: ICON_PATH,
@@ -122,6 +145,11 @@ function createWindow(startMinimized = false) {
   });
 
   mainWindow.loadURL(APP_URL);
+
+  mainWindow.once('ready-to-show', () => {
+    closeSplash();
+    if (!startMinimized) mainWindow.show();
+  });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F11') {
@@ -202,6 +230,7 @@ if (!gotLock) {
 
     const startMinimized = process.argv.includes('--minimized');
     startPython();
+    createSplash();
     await waitForServer();
     createWindow(startMinimized);
     createTray();

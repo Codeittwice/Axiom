@@ -995,9 +995,70 @@
         color: var(--muted);
         margin-bottom: 0.6rem;
       }
+      /* ── Phase 2 boot overlay ───────────────────────────────────────────── */
+      #boot-overlay {
+        position: fixed; inset: 0; z-index: 9999;
+        background: var(--bg);
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 0;
+        transition: opacity 0.7s ease;
+      }
+      #boot-overlay.done { opacity: 0; pointer-events: none; }
+
+      .boot-ov-ring {
+        width: 90px; height: 90px;
+        border-radius: 50%;
+        border: 2px solid rgba(0,212,255,.15);
+        border-top-color: var(--accent);
+        border-right-color: var(--accent);
+        animation: boot-spin 1.2s linear infinite;
+        margin-bottom: 24px;
+        box-shadow: 0 0 20px rgba(0,212,255,.15);
+      }
+      .boot-ov-ring::after {
+        content: '';
+        position: absolute;
+        inset: 8px;
+        border-radius: 50%;
+        border: 1px solid rgba(0,102,255,.2);
+        border-bottom-color: var(--accent2);
+        animation: boot-spin-rev 2s linear infinite;
+      }
+      .boot-ov-label {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 1.6rem; letter-spacing: .4em;
+        color: var(--accent);
+        text-shadow: 0 0 20px rgba(0,212,255,.4);
+        margin-bottom: 6px;
+      }
+      .boot-ov-sub {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: .55rem; letter-spacing: .2em;
+        color: var(--muted);
+        margin-bottom: 28px;
+      }
+      .boot-ov-bar {
+        width: 220px; height: 2px;
+        background: rgba(0,212,255,.1); border-radius: 2px; overflow: hidden;
+      }
+      .boot-ov-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--accent2), var(--accent));
+        box-shadow: 0 0 6px var(--accent);
+        animation: boot-bar-fill 3s ease forwards;
+      }
+      @keyframes boot-spin     { to { transform: rotate(360deg);  } }
+      @keyframes boot-spin-rev { to { transform: rotate(-360deg); } }
+      @keyframes boot-bar-fill { from { width: 0% } to { width: 85% } }
     </style>
   </head>
   <body>
+    <div id="boot-overlay">
+      <div class="boot-ov-ring"></div>
+      <div class="boot-ov-label">AXIOM</div>
+      <div class="boot-ov-sub">SYNCHRONISING SYSTEMS…</div>
+      <div class="boot-ov-bar"><div class="boot-ov-bar-fill"></div></div>
+    </div>
     <div class="scanline"></div>
     <div class="wrap">
       <div class="title-bar" id="titleBar">
@@ -2083,8 +2144,17 @@
       });
 
       // ── Backend events ─────────────────────────────────────────────────────────
+      let _bootDone = false;
       socket.on("state", (data) => {
         setState(data.state);
+        if (!_bootDone && data.state === "idle") {
+          _bootDone = true;
+          const ov = document.getElementById("boot-overlay");
+          if (ov) {
+            ov.classList.add("done");
+            setTimeout(() => ov.remove(), 750);
+          }
+        }
       });
 
       socket.on("transcript", (data) => {

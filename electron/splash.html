@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AXIOM</title>
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;700&family=Share+Tech+Mono&display=swap");
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:     #03050e;
+    --panel:  #070b18;
+    --accent: #00d4ff;
+    --accent2:#0066ff;
+    --text:   #c8deff;
+    --muted:  #3a5070;
+    --green:  #00ffb3;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── Hex grid background ─────────────────────────────── */
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      repeating-linear-gradient(60deg,  rgba(0,212,255,.03) 0, rgba(0,212,255,.03) 1px, transparent 0, transparent 50%),
+      repeating-linear-gradient(120deg, rgba(0,212,255,.03) 0, rgba(0,212,255,.03) 1px, transparent 0, transparent 50%),
+      repeating-linear-gradient(180deg, rgba(0,212,255,.03) 0, rgba(0,212,255,.03) 1px, transparent 0, transparent 50%);
+    background-size: 40px 70px;
+  }
+
+  /* ── Scanline overlay ────────────────────────────────── */
+  .scanlines {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px, transparent 3px,
+      rgba(0,0,0,.12) 3px, rgba(0,0,0,.12) 4px
+    );
+  }
+
+  /* ── Main layout ─────────────────────────────────────── */
+  .stage {
+    position: relative; z-index: 2;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 0;
+    padding: 28px 32px;
+  }
+
+  /* ── Corner decorations ──────────────────────────────── */
+  .corner {
+    position: fixed; width: 20px; height: 20px;
+    border-color: var(--accent); border-style: solid; opacity: .5;
+  }
+  .corner.tl { top:12px; left:12px;  border-width: 2px 0 0 2px; }
+  .corner.tr { top:12px; right:12px; border-width: 2px 2px 0 0; }
+  .corner.bl { bottom:12px; left:12px;  border-width: 0 0 2px 2px; }
+  .corner.br { bottom:12px; right:12px; border-width: 0 2px 2px 0; }
+
+  /* ── Scanner ring ────────────────────────────────────── */
+  .ring-wrap {
+    position: relative;
+    width: 180px; height: 180px;
+    margin-bottom: 28px;
+    flex-shrink: 0;
+  }
+
+  .ring-outer {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(0,212,255,.2);
+    animation: spin 8s linear infinite;
+  }
+  .ring-outer::before, .ring-outer::after {
+    content: '';
+    position: absolute;
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .ring-outer::before { top: -4px; left: 50%; transform: translateX(-50%); }
+  .ring-outer::after  { bottom: -4px; left: 50%; transform: translateX(-50%); }
+
+  .ring-mid {
+    position: absolute; inset: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,212,255,.15);
+    animation: spin-rev 5s linear infinite;
+  }
+  .ring-mid::before, .ring-mid::after {
+    content: '';
+    position: absolute;
+    width: 5px; height: 5px;
+    background: var(--accent2);
+    border-radius: 50%;
+  }
+  .ring-mid::before { top: -2.5px; left: 50%; transform: translateX(-50%); }
+  .ring-mid::after  { top: 50%; right: -2.5px; transform: translateY(-50%); }
+
+  .ring-pulse {
+    position: absolute; inset: 36px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,212,255,.12) 0%, transparent 70%);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+
+  .ring-center {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .6rem; letter-spacing: .25em; color: var(--accent);
+    opacity: .7;
+  }
+
+  /* ── Wordmark ────────────────────────────────────────── */
+  .wordmark {
+    font-size: 2.8rem; font-weight: 700; letter-spacing: .35em;
+    color: var(--accent);
+    text-shadow: 0 0 24px rgba(0,212,255,.5), 0 0 60px rgba(0,212,255,.15);
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: .58rem; letter-spacing: .22em; color: var(--muted);
+    margin-bottom: 32px;
+  }
+
+  /* ── Boot log ────────────────────────────────────────── */
+  .boot-log {
+    width: 100%; max-width: 380px;
+    height: 100px;
+    overflow: hidden;
+    border: 1px solid rgba(0,212,255,.08);
+    background: rgba(0,212,255,.02);
+    padding: 8px 12px;
+    margin-bottom: 20px;
+    border-radius: 2px;
+    position: relative;
+  }
+  .boot-log-inner {
+    display: flex; flex-direction: column-reverse;
+  }
+  .log-line {
+    font-size: .62rem; letter-spacing: .06em;
+    line-height: 1.7; color: var(--muted);
+    white-space: nowrap; overflow: hidden;
+  }
+  .log-line.active { color: var(--accent); }
+  .log-line.done   { color: rgba(0,255,179,.5); }
+
+  /* ── Progress bar ────────────────────────────────────── */
+  .progress-wrap {
+    width: 100%; max-width: 380px;
+    height: 2px;
+    background: rgba(0,212,255,.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    box-shadow: 0 0 8px var(--accent);
+    width: 0%;
+    transition: width .6s ease;
+  }
+
+  .progress-label {
+    margin-top: 8px;
+    font-size: .55rem; letter-spacing: .18em;
+    color: var(--muted);
+    align-self: flex-end;
+    margin-right: 2px;
+  }
+
+  /* ── Animations ──────────────────────────────────────── */
+  @keyframes spin     { to { transform: rotate(360deg);  } }
+  @keyframes spin-rev { to { transform: rotate(-360deg); } }
+  @keyframes pulse {
+    0%, 100% { transform: scale(.9); opacity: .4; }
+    50%       { transform: scale(1.1); opacity: 1;  }
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+<div class="scanlines"></div>
+
+<div class="corner tl"></div>
+<div class="corner tr"></div>
+<div class="corner bl"></div>
+<div class="corner br"></div>
+
+<div class="stage">
+  <div class="ring-wrap">
+    <div class="ring-outer"></div>
+    <div class="ring-mid"></div>
+    <div class="ring-pulse"></div>
+    <div class="ring-center">CORE</div>
+  </div>
+
+  <div class="wordmark">AXIOM</div>
+  <div class="subtitle">PERSONAL INTELLIGENCE SYSTEM</div>
+
+  <div class="boot-log">
+    <div class="boot-log-inner" id="logInner"></div>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+  <div class="progress-label" id="progressLabel">0%</div>
+</div>
+
+<script>
+  const LINES = [
+    '> INITIALIZING AXIOM CORE...',
+    '> LOADING WHISPER MODEL [SMALL]...',
+    '> ESTABLISHING GEMINI LINK...',
+    '> CALIBRATING VOICE DETECTION...',
+    '> SCANNING AUDIO DEVICES...',
+    '> LOADING SCENARIO ENGINE...',
+    '> BUILDING PROJECT REGISTRY...',
+    '> SYNCHRONIZING MEMORY CORE...',
+    '> WAKE WORD LISTENER READY...',
+    '> ALL SYSTEMS NOMINAL',
+  ];
+
+  const logInner   = document.getElementById('logInner');
+  const fill       = document.getElementById('progressFill');
+  const label      = document.getElementById('progressLabel');
+
+  let lineIdx = 0;
+  const totalDuration = 12000; // ms — progress reaches ~90% over this
+  const startTime = Date.now();
+
+  function addLine() {
+    if (lineIdx >= LINES.length) return;
+
+    // Mark previous active → done
+    const prev = logInner.querySelector('.active');
+    if (prev) prev.classList.replace('active', 'done');
+
+    const el = document.createElement('div');
+    el.className = 'log-line active';
+    el.textContent = LINES[lineIdx++];
+    logInner.insertBefore(el, logInner.firstChild);
+
+    // Keep only last 5 visible
+    while (logInner.children.length > 5) {
+      logInner.removeChild(logInner.lastChild);
+    }
+  }
+
+  function updateProgress() {
+    const elapsed = Date.now() - startTime;
+    const pct = Math.min(90, Math.round((elapsed / totalDuration) * 90));
+    fill.style.width = pct + '%';
+    label.textContent = pct + '%';
+  }
+
+  // Kick off first line immediately
+  addLine();
+
+  const lineInterval = setInterval(() => {
+    addLine();
+    if (lineIdx >= LINES.length) clearInterval(lineInterval);
+  }, 1100);
+
+  setInterval(updateProgress, 200);
+</script>
+</body>
+</html>
