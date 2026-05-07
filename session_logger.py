@@ -65,8 +65,13 @@ def log_session(
         return ""
 
 
-def get_recent_logs(days: int = 7) -> list[dict]:
-    """Read and merge JSONL files for the last N days. Returns list sorted by timestamp."""
+def get_recent_logs(days: int = 7, since: str | None = None) -> list[dict]:
+    """
+    Read and merge JSONL files for the last N days.
+    If `since` is an ISO timestamp string, only entries strictly newer than
+    that timestamp are returned (used by the reflection cursor).
+    Returns list sorted by timestamp.
+    """
     try:
         from datetime import timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -87,6 +92,8 @@ def get_recent_logs(days: int = 7) -> list[dict]:
                         continue
                     try:
                         entry = json.loads(line)
+                        if since and entry.get("timestamp", "") <= since:
+                            continue
                         entries.append(entry)
                     except json.JSONDecodeError:
                         continue

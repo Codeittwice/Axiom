@@ -84,12 +84,14 @@ def run_reflection(cfg: dict) -> list[dict]:
 
         learning = cfg.get("learning", {}) or {}
         days = int(learning.get("reflection_window_days", 7))
-        logs = get_recent_logs(days=days)
-        if not logs:
-            print("[AXIOM] Reflection skipped — no session logs yet.")
-            return []
 
         user_model = _load_user_model()
+        last_cursor = user_model.get("last_reflected_until")
+
+        logs = get_recent_logs(days=days, since=last_cursor)
+        if not logs:
+            print("[AXIOM] Reflection skipped — no new sessions since last run.")
+            return []
         registry = build_skill_registry(cfg)
 
         existing = _load_suggestions()
@@ -153,6 +155,8 @@ def run_reflection(cfg: dict) -> list[dict]:
 
         _update_user_model_from_logs(user_model, logs)
         _remember_seen_suggestions(user_model, existing + new_suggestions)
+        new_cursor = max(e["timestamp"] for e in logs)
+        user_model["last_reflected_until"] = new_cursor
         _save_user_model(user_model)
 
         try:
@@ -464,3 +468,49 @@ Generated at {now_str}.
         f"Reflection ran over {len(logs)} sessions; {len(new_suggestions)} new suggestion(s).",
         cfg,
     )
+
+    # 6. Mark episode notes as processed
+    _mark_episodes_reflected(root, logs)
+
+
+def _mark_episodes_reflected(root: "Path", logs: list[dict]) -> None:
+    """
+    For each episode note whose `date` frontmatter falls within the dates
+    covered by `logs`, add `reflection_processed: true` and `reflected_at`.
+    Idempotent — skips notes that already have the flag.
+    """
+    covered_dates = {e["timestamp"][:10] for e in logs if e.get("timestamp")}
+    if not covered_dates:
+        return
+
+    episodes_dir = root / "Memory" / "Episodes"
+    if not episodes_dir.exists():
+        return
+
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+
+    for note_path in episodes_dir.glob("*.md"):
+        try:
+            text = note_path.read_text(encoding="utf-8")
+            if not text.startswith("---"):
+                continue
+            if "reflection_processed: true" in text:
+                continue
+            end = text.find("\n---", 3)
+            if end == -1:
+                continue
+            frontmatter = text[3:end]
+            date_match = re.search(r"^date:\s*(\S+)", frontmatter, re.MULTILINE)
+            if not date_match:
+                continue
+            note_date = date_match.group(1).strip("'\"")
+            if note_date not in covered_dates:
+                continue
+            new_text = (
+                text[:end]
+                + f"\nreflection_processed: true\nreflected_at: {today_iso}"
+                + text[end:]
+            )
+            note_path.write_text(new_text, encoding="utf-8")
+        except Exception as _e:
+            print(f"[AXIOM] Episode flag error ({note_path.name}): {_e}")
