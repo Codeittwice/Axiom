@@ -2046,14 +2046,43 @@
         toast("historyToast", `${data.total} turns`);
       }
 
-      // ── Sci-fi UI click sound ───────────────────────────────────────────────
-      const _clickAudio = new Audio('sounds/click.wav');
-      _clickAudio.volume = 0.7;
+      // ── UI audio ────────────────────────────────────────────────────────────
+      const _uiAc = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Preload click into AudioBuffer for zero-latency playback
+      let _clickBuffer = null;
+      fetch('sounds/click.wav')
+        .then(r => r.arrayBuffer())
+        .then(buf => _uiAc.decodeAudioData(buf))
+        .then(decoded => { _clickBuffer = decoded; })
+        .catch(() => {});
+
       function playUIClick() {
+        if (!_clickBuffer) return;
         try {
-          const s = _clickAudio.cloneNode();
-          s.volume = 0.7;
-          s.play().catch(() => {});
+          const src = _uiAc.createBufferSource();
+          const gain = _uiAc.createGain();
+          src.buffer = _clickBuffer;
+          gain.gain.value = 0.3;
+          src.connect(gain); gain.connect(_uiAc.destination);
+          src.start();
+        } catch (_) {}
+      }
+
+      // Welcome chime — plays as the main window appears
+      function playWelcomeChime() {
+        try {
+          const t = _uiAc.currentTime;
+          [[659.25, t, 0.10, 1.2], [880.00, t + 0.28, 0.08, 1.5]].forEach(([freq, st, peak, dur]) => {
+            const o = _uiAc.createOscillator();
+            const g = _uiAc.createGain();
+            o.type = 'sine'; o.frequency.value = freq;
+            g.gain.setValueAtTime(0, st);
+            g.gain.linearRampToValueAtTime(peak, st + 0.07);
+            g.gain.exponentialRampToValueAtTime(0.001, st + dur);
+            o.connect(g); g.connect(_uiAc.destination);
+            o.start(st); o.stop(st + dur + 0.05);
+          });
         } catch (_) {}
       }
 
@@ -2149,6 +2178,7 @@
 
       // Tell Electron to close the splash and show this window once fully ready
       socket.on("system_ready", () => {
+        playWelcomeChime();
         if (window.axiomWindow?.systemReady) window.axiomWindow.systemReady();
       });
 
