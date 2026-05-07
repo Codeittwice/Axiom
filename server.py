@@ -589,6 +589,7 @@ def assistant_loop():
     print(f"\n[AXIOM] Ready — press {hotkey.upper()} to speak, ESC to quit.\n")
     emit("log", {"level": "system", "text": f"Ready - press {hotkey.upper()} or say the wake word."})
     emit("state", {"state": "idle"})
+    emit("system_ready", {})
 
     while True:
         conversation_cfg = CFG.get("conversation", {}) or {}

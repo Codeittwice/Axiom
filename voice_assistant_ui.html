@@ -2144,17 +2144,15 @@
       });
 
       // ── Backend events ─────────────────────────────────────────────────────────
-      let _bootDone = false;
+      function _dismissBootOverlay() {
+        const ov = document.getElementById("boot-overlay");
+        if (ov) { ov.classList.add("done"); setTimeout(() => ov.remove(), 750); }
+      }
+      // system_ready fires only after whisper + wake word are fully loaded
+      socket.on("system_ready", _dismissBootOverlay);
+
       socket.on("state", (data) => {
         setState(data.state);
-        if (!_bootDone && data.state === "idle") {
-          _bootDone = true;
-          const ov = document.getElementById("boot-overlay");
-          if (ov) {
-            ov.classList.add("done");
-            setTimeout(() => ov.remove(), 750);
-          }
-        }
       });
 
       socket.on("transcript", (data) => {
