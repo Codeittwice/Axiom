@@ -263,6 +263,8 @@ def _system_prompt() -> str:
         "Call get_weather for weather questions. "
         "Call today_schedule or next_event for calendar questions. "
         "Call get_last_commit_message when asked about the latest commit or recent changes. "
+        "Call remember_preference when the user says 'remember that', 'I prefer', 'I always', 'I never', 'I like', 'I hate', 'I want', or 'from now on' — save it to memory first, then acknowledge. "
+        "Call recall_memory when the user says 'do you remember', 'what did I say about', 'have I told you', or asks about a past preference or conversation. "
         "When in doubt between answering from memory and calling a tool, call the tool."
     )
 
@@ -444,6 +446,18 @@ def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIRes
         {"role": h["role"], "parts": [{"text": clean_text(h["text"])}]}
         for h in history
     ]
+
+    # Brain recall — prepend relevant long-term context as a synthetic history turn
+    try:
+        from brain import recall
+        _brain_ctx = recall(user_text, CFG, max_tokens=400)
+        if _brain_ctx:
+            gemini_history = [
+                {"role": "user",  "parts": [{"text": f"[AXIOM memory context]\n{_brain_ctx}"}]},
+                {"role": "model", "parts": [{"text": "Understood, I'll keep this context in mind."}]},
+            ] + gemini_history
+    except Exception:
+        pass
 
     model = genai.GenerativeModel(
         model_name=CFG["gemini"]["model"],

@@ -427,6 +427,34 @@ GEMINI_TOOLS = [{
             }
         },
         {
+            "name": "recall_memory",
+            "description": "Search AXIOM's long-term brain memory for context related to a topic. Call when the user says 'do you remember', 'what did I say about', 'have I told you', or asks about a past preference or interaction.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Topic or phrase to search for in memory."
+                    }
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "remember_preference",
+            "description": "Save a user preference or fact to AXIOM's long-term brain memory. Call when the user says 'remember that', 'I prefer', 'always', 'never', 'I like', 'I hate', 'I want', or 'from now on'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "The preference or fact to remember, as stated by the user."
+                    }
+                },
+                "required": ["text"]
+            }
+        },
+        {
             "name": "get_last_commit_message",
             "description": "Return the subject line of the most recent git commit for a project. Use when the user asks what the last commit was or what was recently changed.",
             "parameters": {
@@ -1308,6 +1336,26 @@ def get_last_commit_message(repo_name: str = "") -> str:
     return f"Last commit: {msg}" if msg else "No commits found."
 
 
+def recall_memory(query: str) -> str:
+    try:
+        from brain import recall
+        from server import CFG  # noqa: PLC0415
+        result = recall(query, CFG, max_tokens=600)
+        return result if result else "Nothing found in memory for that topic."
+    except Exception as e:
+        return f"Memory recall failed: {e}"
+
+
+def remember_preference(text: str) -> str:
+    try:
+        from brain import update_profile
+        from server import CFG  # noqa: PLC0415
+        update_profile("Communication Style", text, CFG)
+        return f"Noted and saved to memory: {text}"
+    except Exception as e:
+        return f"Memory save failed: {e}"
+
+
 def run_git(command: str, repo_name: str = "") -> str:
     cwd = _resolve_repo_path(repo_name)
     if isinstance(cwd, str) and cwd.startswith("Error"):
@@ -1601,6 +1649,8 @@ def execute_tool(name: str, inputs: dict) -> str:
         "connect_gmail":    lambda i: connect_gmail(),
         "ha_get_state":     lambda i: ha_get_state(i["entity_id"]),
         "ha_call_service":  lambda i: ha_call_service(i["domain"], i["service"], i.get("data", {})),
+        "recall_memory":     lambda i: recall_memory(i["query"]),
+        "remember_preference": lambda i: remember_preference(i["text"]),
         "get_last_commit_message": lambda i: get_last_commit_message(i.get("repo_name", "")),
         "run_git":          lambda i: run_git(i["command"], i.get("repo_name", "")),
         "run_terminal":     lambda i: run_terminal(i["command"], i.get("repo_name", "")),

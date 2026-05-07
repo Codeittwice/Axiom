@@ -670,10 +670,18 @@ def assistant_loop():
         # --- Log session ---
         try:
             from session_logger import log_session
-            log_session(text, reply, tools_called, round(time.time() - session_start, 2))
+            _duration = round(time.time() - session_start, 2)
+            log_session(text, reply, tools_called, _duration)
             _check_auto_reflect(CFG)
         except Exception as e:
             emit("log", {"level": "warn", "text": f"Session log failed: {e}"})
+
+        # --- Crystallise brain memory ---
+        try:
+            from brain import crystallise
+            crystallise(text, reply, tools_called, CFG, _duration)
+        except Exception as e:
+            emit("log", {"level": "warn", "text": f"Brain crystallise failed: {e}"})
 
 # ─── System tray (optional) ───────────────────────────────────────────────────
 
@@ -711,6 +719,12 @@ if __name__ == "__main__":
     # Import engine here (not at top) so Flask starts before Whisper loads
     print("[AXIOM] Starting…")
     electron_mode = os.environ.get("AXIOM_ELECTRON") == "1"
+
+    try:
+        from brain import init_brain
+        init_brain(CFG)
+    except Exception as _brain_err:
+        print(f"[AXIOM] Brain init skipped: {_brain_err}")
 
     # Assistant runs in a background thread
     t = threading.Thread(target=assistant_loop, daemon=True)

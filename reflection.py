@@ -151,6 +151,11 @@ def run_reflection(cfg: dict) -> list[dict]:
         _update_user_model_from_logs(user_model, logs)
         _save_user_model(user_model)
 
+        try:
+            _write_reflection_to_brain(user_model, logs, new_suggestions, cfg)
+        except Exception as _brain_err:
+            print(f"[AXIOM] Brain reflection write skipped: {_brain_err}")
+
         print(f"[AXIOM] Reflection complete: {len(new_suggestions)} new suggestion(s).")
         return new_suggestions
 
@@ -308,3 +313,76 @@ def _update_user_model_from_logs(model: dict, logs: list[dict]) -> None:
 
     model["session_count"] = model.get("session_count", 0) + len(logs)
     model["last_updated"] = datetime.now(timezone.utc).isoformat()
+
+
+def _write_reflection_to_brain(
+    user_model: dict,
+    logs: list[dict],
+    new_suggestions: list[dict],
+    cfg: dict,
+) -> None:
+    """Write reflection findings as Obsidian notes in the AXIOM Brain."""
+    from brain import update_profile, grow_log, _brain_root  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    root = _brain_root(cfg)
+    if root is None or not root.exists():
+        return
+
+    now = datetime.now()
+    now_str = now.strftime("%Y-%m-%d %H:%M")
+    today = now.strftime("%Y-%m-%d")
+
+    # 1. Working patterns — top tools used
+    freq = user_model.get("frequent_domains", {})
+    if freq:
+        top_tools = sorted(freq.items(), key=lambda x: -x[1])[:5]
+        tools_str = ", ".join(f"{t}({c})" for t, c in top_tools)
+        update_profile("Working Patterns", f"Top tools this period: {tools_str}", cfg)
+
+    # 2. Working hours peak
+    wh = user_model.get("working_hours", {})
+    if wh:
+        peak_hour = max(wh, key=lambda h: wh[h])
+        update_profile("Working Patterns", f"Peak active hour: {peak_hour}:00", cfg)
+
+    # 3. Daily summary note
+    summary_path = root / "Memory" / "Daily Summaries" / f"{today}.md"
+    if not summary_path.exists():
+        utterances = list(dict.fromkeys(
+            e.get("user_utterance", "").strip()
+            for e in logs
+            if e.get("user_utterance", "").strip()
+        ))[:10]
+        utterance_lines = "\n".join(f"- {u}" for u in utterances)
+        summary_path.write_text(
+            f"""---
+type: daily_summary
+date: {today}
+---
+
+# Daily Summary — {today}
+
+## Interactions ({len(logs)} total)
+
+{utterance_lines}
+
+## Reflection timestamp
+Generated at {now_str}.
+""",
+            encoding="utf-8",
+        )
+
+    # 4. Pending improvements — add new suggestion titles
+    pending_path = root / "Self" / "Pending Improvements.md"
+    if new_suggestions and pending_path.exists():
+        existing = pending_path.read_text(encoding="utf-8")
+        lines = [f"- {now_str}: [[{s['title']}]] (complexity: {s.get('complexity', '?')})"
+                 for s in new_suggestions]
+        pending_path.write_text(existing + "\n".join(lines) + "\n", encoding="utf-8")
+
+    # 5. Growth log entry
+    grow_log(
+        f"Reflection ran over {len(logs)} sessions; {len(new_suggestions)} new suggestion(s).",
+        cfg,
+    )

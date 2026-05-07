@@ -266,3 +266,11 @@ learning:
   session_logs_dir: data/session_logs
   user_model_file: data/user_model.json
   suggestions_file: data/suggestions.json
+
+brain:
+  enabled: true
+  vault_subfolder: "AXIOM Brain"         # relative to obsidian.vault_path
+  recall_on_every_request: true          # inject context before each response
+  crystallise_threshold_seconds: 20      # crystallise if interaction took this long
+  max_recall_tokens: 400
+  max_episodes: 500                      # prune oldest if exceeded
