@@ -1045,109 +1045,10 @@
         color: var(--muted);
         margin-bottom: 0.6rem;
       }
-      /* ── Phase 2 boot overlay ───────────────────────────────────────────── */
-      #boot-overlay {
-        position: fixed; inset: 0; z-index: 9999;
-        background: rgba(3,5,14,.88);
-        backdrop-filter: blur(4px);
-        display: flex; align-items: center; justify-content: center;
-        transition: opacity 0.7s ease;
-      }
-      #boot-overlay.done { opacity: 0; pointer-events: none; }
-
-      .boot-ov-card {
-        background: var(--panel);
-        border: 1px solid rgba(0,212,255,.18);
-        border-radius: 3px;
-        padding: 2.5rem 2rem 2rem;
-        width: min(400px, 90vw);
-        display: flex; flex-direction: column; align-items: center;
-        box-shadow: 0 0 60px rgba(0,212,255,.07), 0 24px 64px rgba(0,0,0,.6);
-        position: relative;
-      }
-      .boot-ov-card::before, .boot-ov-card::after {
-        content: ''; position: absolute; width: 14px; height: 14px;
-        border-color: rgba(0,212,255,.45); border-style: solid;
-      }
-      .boot-ov-card::before { top:8px; right:8px; border-width:1px 1px 0 0; }
-      .boot-ov-card::after  { bottom:8px; left:8px; border-width:0 0 1px 1px; }
-
-      .boot-ov-ring {
-        width: 80px; height: 80px;
-        border-radius: 50%;
-        border: 2px solid rgba(0,212,255,.15);
-        border-top-color: var(--accent);
-        border-right-color: var(--accent);
-        animation: boot-spin 1.2s linear infinite;
-        margin-bottom: 20px;
-        box-shadow: 0 0 20px rgba(0,212,255,.12);
-        position: relative;
-      }
-      .boot-ov-ring::after {
-        content: '';
-        position: absolute;
-        inset: 7px;
-        border-radius: 50%;
-        border: 1px solid rgba(0,102,255,.2);
-        border-bottom-color: var(--accent2);
-        animation: boot-spin-rev 2s linear infinite;
-      }
-      .boot-ov-label {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: 1.5rem; letter-spacing: .4em;
-        color: var(--accent);
-        text-shadow: 0 0 20px rgba(0,212,255,.4);
-        margin-bottom: 4px;
-      }
-      .boot-ov-sub {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: .52rem; letter-spacing: .2em;
-        color: var(--muted);
-        margin-bottom: 20px;
-      }
-      .boot-ov-log {
-        width: 100%;
-        height: 82px;
-        overflow: hidden;
-        border: 1px solid rgba(0,212,255,.07);
-        background: rgba(0,212,255,.02);
-        border-radius: 2px;
-        padding: 7px 10px;
-        margin-bottom: 16px;
-        display: flex; flex-direction: column-reverse;
-      }
-      .boot-ov-log-line {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: .58rem; letter-spacing: .06em; line-height: 1.7;
-        color: var(--muted);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      .boot-ov-log-line.active { color: var(--accent); }
-      .boot-ov-log-line.done   { color: rgba(0,255,179,.55); }
-      .boot-ov-bar {
-        width: 100%; height: 2px;
-        background: rgba(0,212,255,.1); border-radius: 2px; overflow: hidden;
-      }
-      .boot-ov-bar-fill {
-        height: 100%;
-        background: linear-gradient(90deg, var(--accent2), var(--accent));
-        box-shadow: 0 0 6px var(--accent);
-        width: 0%; transition: width .5s ease;
-      }
-      @keyframes boot-spin     { to { transform: rotate(360deg);  } }
-      @keyframes boot-spin-rev { to { transform: rotate(-360deg); } }
     </style>
   </head>
   <body>
-    <div id="boot-overlay">
-      <div class="boot-ov-card">
-        <div class="boot-ov-ring"></div>
-        <div class="boot-ov-label">AXIOM</div>
-        <div class="boot-ov-sub">INITIALISING SYSTEMS…</div>
-        <div class="boot-ov-log" id="bootLog"></div>
-        <div class="boot-ov-bar"><div class="boot-ov-bar-fill" id="bootBarFill"></div></div>
-      </div>
-    </div>
+
     <div class="scanline"></div>
     <div class="wrap">
       <div class="title-bar" id="titleBar">
@@ -2233,37 +2134,6 @@
       });
 
       // ── Backend events ─────────────────────────────────────────────────────────
-      // ── Boot overlay log feed ───────────────────────────────────────────────
-      const _bootLog = document.getElementById("bootLog");
-      const _bootBar = document.getElementById("bootBarFill");
-      let _bootLogCount = 0;
-      const _BOOT_STEPS = 8; // approximate number of log lines before ready
-
-      function _bootAppendLog(text) {
-        if (!_bootLog) return;
-        const prev = _bootLog.querySelector(".active");
-        if (prev) prev.classList.replace("active", "done");
-        const el = document.createElement("div");
-        el.className = "boot-ov-log-line active";
-        el.textContent = "> " + text;
-        _bootLog.insertBefore(el, _bootLog.firstChild);
-        while (_bootLog.children.length > 5) _bootLog.removeChild(_bootLog.lastChild);
-        _bootLogCount++;
-        if (_bootBar) {
-          const pct = Math.min(90, Math.round((_bootLogCount / _BOOT_STEPS) * 90));
-          _bootBar.style.width = pct + "%";
-        }
-      }
-
-      function _dismissBootOverlay() {
-        if (_bootBar) _bootBar.style.width = "100%";
-        setTimeout(() => {
-          const ov = document.getElementById("boot-overlay");
-          if (ov) { ov.classList.add("done"); setTimeout(() => ov.remove(), 750); }
-        }, 300);
-      }
-      // system_ready fires only after whisper + wake word are fully loaded
-      socket.on("system_ready", _dismissBootOverlay);
 
       socket.on("state", (data) => {
         setState(data.state);
@@ -2294,7 +2164,6 @@
       socket.on("log", (data) => {
         const role = data.level || "system";
         addLog(role, data.text);
-        if (document.getElementById("boot-overlay")) _bootAppendLog(data.text);
       });
 
       socket.on("error", (data) => {
