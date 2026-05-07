@@ -2,6 +2,7 @@
 .env
 memory.json
 secrets/
+data/
 *.token.json
 custom_models/
 *.wav

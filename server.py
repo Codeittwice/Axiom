@@ -391,10 +391,141 @@ def _speak_preview(text: str) -> None:
         emit("error", {"message": f"Voice preview failed: {e}"})
 
 
+# ─── Learning API endpoints ────────────────────────────────────────────────────
+
+@app.route("/api/suggestions", methods=["GET"])
+def api_suggestions():
+    import json
+    p = Path("data/suggestions.json")
+    if not p.exists():
+        return jsonify({"items": []})
+    with open(p, encoding="utf-8") as f:
+        items = json.load(f)
+    if isinstance(items, dict):
+        items = items.get("items", [])
+    status_filter = request.args.get("status")
+    if status_filter:
+        items = [s for s in items if s.get("status") == status_filter]
+    return jsonify({"items": items})
+
+
+@app.route("/api/suggestions/<suggestion_id>/approve", methods=["POST"])
+def api_approve_suggestion(suggestion_id: str):
+    import json
+    p = Path("data/suggestions.json")
+    if not p.exists():
+        return jsonify({"error": "No suggestions file"}), 404
+    with open(p, encoding="utf-8") as f:
+        items = json.load(f)
+    if isinstance(items, dict):
+        items = items.get("items", [])
+    for s in items:
+        if s.get("id") == suggestion_id:
+            s["status"] = "approved"
+            s["user_notes"] = (request.get_json(silent=True) or {}).get("notes", "")
+            break
+    else:
+        return jsonify({"error": "Not found"}), 404
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(items, f, indent=2, ensure_ascii=False)
+    _update_user_model_approval(suggestion_id, approved=True)
+    socketio.emit("suggestion_approved", {"id": suggestion_id})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/suggestions/<suggestion_id>/reject", methods=["POST"])
+def api_reject_suggestion(suggestion_id: str):
+    import json
+    p = Path("data/suggestions.json")
+    if not p.exists():
+        return jsonify({"error": "No suggestions file"}), 404
+    with open(p, encoding="utf-8") as f:
+        items = json.load(f)
+    if isinstance(items, dict):
+        items = items.get("items", [])
+    for s in items:
+        if s.get("id") == suggestion_id:
+            s["status"] = "rejected"
+            break
+    else:
+        return jsonify({"error": "Not found"}), 404
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(items, f, indent=2, ensure_ascii=False)
+    _update_user_model_approval(suggestion_id, approved=False)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/user-model", methods=["GET"])
+def api_user_model():
+    import json
+    p = Path("data/user_model.json")
+    if not p.exists():
+        return jsonify({})
+    with open(p, encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
+
+@app.route("/api/reflect", methods=["POST"])
+def api_reflect():
+    threading.Thread(target=_run_reflection_bg, daemon=True).start()
+    return jsonify({"ok": True, "message": "Reflection started in background."})
+
+
+@app.route("/api/skill-registry", methods=["GET"])
+def api_skill_registry():
+    from reflection import build_skill_registry
+    return jsonify(build_skill_registry(CFG))
+
+
 @socketio.on("connect")
 def on_connect():
     emit("state", {"state": "idle"})
     emit("log",   {"level": "system", "text": f"AXIOM online - press {CFG['assistant']['hotkey'].upper()} to speak."})
+
+
+# ─── Self-learning helpers ────────────────────────────────────────────────────
+
+_sessions_since_reflect = 0
+
+
+def _check_auto_reflect(cfg: dict) -> None:
+    global _sessions_since_reflect
+    learning = cfg.get("learning", {}) or {}
+    if not learning.get("reflection_enabled", True):
+        return
+    threshold = int(learning.get("auto_reflect_after_sessions", 10))
+    _sessions_since_reflect += 1
+    if _sessions_since_reflect >= threshold:
+        _sessions_since_reflect = 0
+        threading.Thread(target=_run_reflection_bg, daemon=True).start()
+
+
+def _run_reflection_bg() -> None:
+    try:
+        from reflection import run_reflection
+        suggestions = run_reflection(CFG)
+        if suggestions:
+            emit("log", {"level": "system", "text": f"Reflection complete: {len(suggestions)} new suggestion(s)."})
+            socketio.emit("suggestions_updated", {"count": len(suggestions)})
+    except Exception as e:
+        print(f"[AXIOM] Reflection error: {e}")
+
+
+def _update_user_model_approval(suggestion_id: str, approved: bool) -> None:
+    import json
+    p = Path("data/user_model.json")
+    model: dict = {}
+    if p.exists():
+        with open(p, encoding="utf-8") as f:
+            model = json.load(f)
+    key = "approved_suggestions" if approved else "rejected_suggestions"
+    lst = model.setdefault(key, [])
+    if suggestion_id not in lst:
+        lst.append(suggestion_id)
+    model["last_updated"] = datetime.now().isoformat()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(model, f, indent=2, ensure_ascii=False)
 
 
 # ─── Assistant loop ───────────────────────────────────────────────────────────
@@ -460,6 +591,7 @@ def assistant_loop():
         time.sleep(0.05)
 
         # --- Record ---
+        session_start = time.time()
         wait_for_speech = None
         if conversation_open:
             wait_for_speech = max(1, conversation_open_until - time.monotonic())
@@ -496,6 +628,7 @@ def assistant_loop():
             result = ask_ai(text, history, speak_response=True)
             reply = result.reply
             history = result.history
+            tools_called = result.tools_called
             save_history(history)
             emit("response", {"text": reply})
         except Exception as e:
@@ -515,6 +648,14 @@ def assistant_loop():
             emit("log", {"level": "system", "text": f"Follow-up listening open for {int(follow_up_timeout)} seconds."})
         else:
             conversation_open_until = 0.0
+
+        # --- Log session ---
+        try:
+            from session_logger import log_session
+            log_session(text, reply, tools_called, round(time.time() - session_start, 2))
+            _check_auto_reflect(CFG)
+        except Exception as e:
+            emit("log", {"level": "warn", "text": f"Session log failed: {e}"})
 
 # ─── System tray (optional) ───────────────────────────────────────────────────
 

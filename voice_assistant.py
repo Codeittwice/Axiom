@@ -84,6 +84,11 @@ class AIResult:
     history: list
     spoke: bool = False
     interrupted: bool = False
+    tools_called: list = None
+
+    def __post_init__(self):
+        if self.tools_called is None:
+            self.tools_called = []
 
 def set_emit(fn: Callable):
     global _emit
@@ -392,13 +397,14 @@ def _can_stream_text_reply(user_text: str) -> bool:
 
 def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIResult:
     """
-    Send a message to Gemini, handle tool use, return (reply_text, updated_history).
+    Send a message to Gemini, handle tool use, return (reply_text, updated_history, tools_called).
     History is a simple list of {"role": "user"|"model", "text": "..."} dicts.
     Tool call turns are handled in-session and not persisted — only the final
     text exchange is saved, keeping memory.json clean and portable.
     """
     from tools import GEMINI_TOOLS, execute_tool
     user_text = clean_text(user_text)
+    _tools_called: list[str] = []
 
     direct_tool = _direct_tool_for_text(user_text)
     if direct_tool:
@@ -406,6 +412,7 @@ def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIRes
         print(console_text(f"[AXIOM] Direct tool: {name}({args})"))
         _send("tool", {"name": name, "input": args})
         _send("state", {"state": "tool"})
+        _tools_called.append(name)
         reply = clean_text(execute_tool(name, args))
         print(console_text(f"[AXIOM] {ASSISTANT_NAME}: {reply}"))
         updated_history = history + [
@@ -413,7 +420,7 @@ def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIRes
             {"role": "model", "text": reply},
         ]
         _send("state", {"state": "idle"})
-        return AIResult(reply=reply, history=_maybe_summarize_history(updated_history))
+        return AIResult(reply=reply, history=_maybe_summarize_history(updated_history), tools_called=_tools_called)
 
     # Convert stored text history to Gemini's content format
     gemini_history = [
@@ -470,6 +477,7 @@ def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIRes
             _send("tool",  {"name": fn.name, "input": args})
             _send("state", {"state": "tool"})
             _slow_tool_acknowledgement(fn.name)
+            _tools_called.append(fn.name)
             result = clean_text(execute_tool(fn.name, args))
             fn_responses.append(
                 genai.protos.Part(
@@ -489,7 +497,7 @@ def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIRes
         {"role": "user",  "text": user_text},
         {"role": "model", "text": reply},
     ]
-    return AIResult(reply=reply, history=_maybe_summarize_history(updated_history))
+    return AIResult(reply=reply, history=_maybe_summarize_history(updated_history), tools_called=_tools_called)
 
 
 def _response_text(response) -> str:
