@@ -250,12 +250,27 @@
     o.start(startT); o.stop(startT + dur + 0.05);
   }
 
-  // Ambient arpeggio — Am7 notes cycling softly throughout boot
-  const _AMBIENT = [220, 261.63, 329.63, 392.00, 440.00, 329.63]; // A3 C4 E4 G4 A4 E4
+  // Ambient arpeggio — ascending Am pentatonic from A1, never loops
+  const _AMBIENT = [
+    220.00,  // A3
+    261.63,  // C4
+    329.63,  // E4
+    392.00,  // G4
+    440.00,  // A4
+    523.25,  // C5
+    659.25,  // E5
+    783.99,  // G5
+    880.00,  // A5
+    1046.50, // C6
+    1318.51, // E6
+    1567.98, // G6
+    1760.00, // A6
+  ];
   let _ambIdx = 0, _ambTimer = null;
 
   function _ambientTick() {
-    _sine(_AMBIENT[_ambIdx % _AMBIENT.length], _ac.currentTime, 0.045, 2.8);
+    if (_ambIdx >= _AMBIENT.length) { stopAmbient(); return; }
+    _sine(_AMBIENT[_ambIdx], _ac.currentTime, 0.045, 2.8);
     _ambIdx++;
   }
   function startAmbient(intervalMs = 1800) {
@@ -295,7 +310,7 @@
   }
 
   // ── Kick off ───────────────────────────────────────────────────────────────
-  startAmbient(1900);
+  startAmbient(2600);
   addLine();
   const lineInterval = setInterval(() => {
     addLine();

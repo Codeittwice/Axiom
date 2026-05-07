@@ -603,7 +603,7 @@ def assistant_loop():
         def _greet():
             import time as _t; _t.sleep(0.6)
             _h = _dt.now().hour
-            _tod = "morning" if _h < 12 else "afternoon" if _h < 17 else "evening"
+            _tod = "morning" if 4 <= _h < 12 else "afternoon" if 12 <= _h < 19 else "evening"
             speak(f"Good {_tod}, sir. AXIOM is online.")
         _th.Thread(target=_greet, daemon=True).start()
     except Exception:
