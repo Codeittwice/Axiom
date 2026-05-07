@@ -680,3 +680,178 @@ Stop reflection from proposing the same suggestions every time it runs.
 - Added `user_model.seen_suggestion_fingerprints` as a rolling memory of previously proposed ideas.
 - Reflection prompt now tells Gemini about all already-seen titles.
 - Added unit tests for duplicate, seen-memory, and all-status blocking behavior.
+
+---
+
+## 2026-05-07 - AXIOM Brain (Obsidian Semantic Memory)
+
+### Goal
+Give AXIOM a persistent, associative long-term memory backed by an Obsidian vault so it can recall past interactions, preferences, and patterns across sessions.
+
+### Implementation log
+
+- Created `brain.py` — full semantic memory module with `init_brain`, `recall`, `crystallise`, `update_profile`, `grow_log`.
+- Brain stores notes in `AXIOM Brain/` inside the configured Obsidian vault, organised into `Profile/`, `Memory/Episodes/`, `Memory/Daily Summaries/`, `Skills/`, and `Self/` folders.
+- `recall()` does keyword extraction + wikilink-aware search across all brain notes and injects matching context as a synthetic Gemini history turn before each request.
+- `crystallise()` writes a new episode note after each voice interaction (triggered from `server.py` post-session).
+- `update_profile()` appends observations to profile notes (Communication Style, Working Patterns, etc.).
+- `grow_log()` appends entries to `Self/Growth Log.md`.
+- Added `brain:` section to `config.yaml` (`enabled`, `vault_subfolder`, `recall_on_every_request`, `crystallise_threshold_seconds`, `max_recall_tokens`, `max_episodes`).
+- Wired `init_brain` call into `server.py` startup.
+- Brain recall injected in `voice_assistant.py` `ask_ai()` before Gemini call.
+- Crystallise call added in `server.py` after `log_session`.
+- Added `recall_memory` and `remember_preference` Gemini tools in `tools.py`.
+- Added `_write_reflection_to_brain()` to `reflection.py` — writes working patterns, daily summaries, pending improvements, and growth log entries after each reflection run.
+- Created `backfill_brain.py` — one-shot script to import existing `memory.json` conversation history as episode notes (7 episodes generated).
+
+### Files touched
+- ✅ `brain.py` (NEW)
+- ✅ `backfill_brain.py` (NEW)
+- ✅ `config.yaml` (brain: section added)
+- ✅ `server.py` (init_brain, crystallise call)
+- ✅ `voice_assistant.py` (recall injection in ask_ai)
+- ✅ `tools.py` (recall_memory, remember_preference tools)
+- ✅ `reflection.py` (_write_reflection_to_brain, _mark_episodes_reflected)
+
+---
+
+## 2026-05-07 - Reflection Cursor + Episode Seen-Flag
+
+### Goal
+Stop reflection re-processing old sessions and mark which Obsidian episode notes have already been digested.
+
+### Implementation log
+
+- Added `since: str | None` parameter to `get_recent_logs()` in `session_logger.py` — filters out entries with `timestamp <= since`.
+- `run_reflection()` reads `last_reflected_until` cursor from `user_model` before fetching logs; skips early with "no new sessions" if nothing is newer; advances cursor to `max(timestamp)` of the processed batch after a successful run.
+- Added `_mark_episodes_reflected()` helper in `reflection.py` — scans `Memory/Episodes/*.md`, finds notes whose `date` frontmatter falls within the reflected window, and rewrites frontmatter adding `reflection_processed: true` and `reflected_at: <date>`. Idempotent.
+- `_write_reflection_to_brain()` calls `_mark_episodes_reflected()` as step 6.
+
+### Files touched
+- ✅ `session_logger.py`
+- ✅ `reflection.py`
+
+---
+
+## 2026-05-07 - STT Latency: faster-whisper
+
+### Goal
+Replace the standard openai-whisper backend with faster-whisper for approximately 4× faster transcription on CPU.
+
+### Implementation log
+
+- Added `faster-whisper` to `requirements.txt` (kept `openai-whisper` as fallback).
+- `voice_assistant.py` tries to import `faster_whisper.WhisperModel` at startup; falls back to standard whisper if not installed.
+- `transcribe()` has two paths: faster-whisper uses `compute_type="int8"`, `beam_size=1`, `log_prob_threshold` (note: different param name from standard whisper's `logprob_threshold`), joins the segment generator; standard whisper path unchanged.
+- Model loads with `device="cpu"` and `compute_type="int8"` for maximum CPU efficiency.
+
+---
+
+## 2026-05-07 - Python venv Migration (C: → E: Drive)
+
+### Goal
+Move all Python packages off the full C: drive onto the E: drive to free space and keep model caches there too.
+
+### Implementation log
+
+- Created `.venv` at project root on E: drive; reinstalled all packages there.
+- Added `TEMP=E:\.tmp` during pip install to avoid C: TEMP exhausting space.
+- `run.pyw` self-re-execs into `.venv/Scripts/pythonw.exe` if not already running from the venv.
+- `electron/main.js` auto-detects `.venv/Scripts/python.exe` and uses it instead of system Python.
+- Added `XDG_CACHE_HOME=E:\.cache` and `HF_HOME=E:\.cache\huggingface` to `.env` so future model downloads land on E:.
+- Moved existing whisper model cache (~0.59 GB) from `C:\Users\...\AppData` to `E:\.cache`.
+
+---
+
+## 2026-05-07 - Wake Word Fix
+
+### Goal
+Wake word was never triggering.
+
+### Root cause
+`config.yaml` had `threshold: 1` (100% confidence required — effectively impossible). Corrected to `0.5`.
+
+### Other fixes
+- Suppressed `pkg_resources is deprecated` warning from openwakeword on every startup via `warnings.filterwarnings` before the import.
+
+---
+
+## 2026-05-07 - Electron Splash Screen + Boot Sequence
+
+### Goal
+Show a sci-fi loading animation while the backend initialises so the user isn't staring at a blank window.
+
+### Implementation log
+
+**Phase 1 — Electron splash (before backend up)**
+- Created `electron/splash.html` — frameless 500×560 BrowserWindow with hex-grid background, scanline overlay, two counter-rotating orbital rings, AXIOM wordmark, boot log (column-reverse list, last 5 lines), progress bar growing 0→90% over 12 s.
+- `electron/main.js` creates the splash immediately on app ready, starts Python backend, then `await waitForServer()` before creating the hidden main window.
+- Splash closes and main window shows only when the backend emits `system_ready`.
+
+**Phase 2 — system_ready handshake**
+- `server.py` emits `system_ready` after whisper model loaded, hotkeys registered, and wake word listener running — not on first SocketIO connect.
+- `electron/preload.js` exposes `axiomWindow.systemReady()` → `ipcRenderer.send('system:ready')`.
+- `main.js` handles `system:ready` IPC → `closeSplash()` + `mainWindow.show()`.
+- HTML overlay approach was tried and removed; Electron splash is the sole loading UI.
+
+**Boot sounds (splash)**
+- Ambient Am7 arpeggio (A3 C4 E4 G4 A4) cycling every 1.9 s throughout boot via Web Audio API.
+- Ready chime: C5–E5–G5 major triad with octave shimmer when all boot lines complete.
+- Line ticks and welcome chime were tried and removed at user request.
+
+**Startup voice greeting**
+- `server.py` spawns a daemon thread after `system_ready` that calls the real edge-TTS `speak()` with a time-of-day greeting: "Good morning/afternoon/evening, sir. AXIOM is online."
+
+### Files touched
+- ✅ `electron/splash.html` (NEW)
+- ✅ `electron/main.js` (splash lifecycle, system:ready IPC)
+- ✅ `electron/preload.js` (systemReady IPC bridge)
+- ✅ `server.py` (system_ready emit, greeting thread, /sounds/ route)
+- ✅ `voice_assistant_ui.html` (system_ready socket listener)
+
+---
+
+## 2026-05-07 - Responsive UI Layout
+
+### Goal
+Fix clipping at smaller window sizes and support tablet/mobile screen widths.
+
+### Implementation log
+
+- `.wrap` changed from fixed `max-width: 720px` to `min(1600px, 100vw - 2rem)` always.
+- `.live-shell` 3-column grid columns changed from `minmax(300px, 340px)` to `minmax(0, 260px)` — eliminates the 1240 px minimum that caused overflow.
+- `grid align-items` changed from `stretch` to `start` so side panels don't artificially fill height.
+- Tabs corrected to `repeat(7, 1fr)` to match 7 tab buttons.
+- Added `sysbar-stack` and `sysbar-build` classes for targeted responsive hiding.
+
+**Breakpoints added:**
+| Viewport | Layout |
+|---|---|
+| ≥ 1100 px | 3 columns: `260px / 1fr / 260px` |
+| 720–1100 px | 2 columns: `1fr / 230px` (left panel hidden) |
+| ≤ 720 px | Single column, both panels hidden, tabs wrap to 4 cols, header-meta and stack info hidden |
+| ≤ 480 px | Tabs wrap to 3 cols, sysbar font smaller |
+
+### Files touched
+- ✅ `voice_assistant_ui.html`
+
+---
+
+## 2026-05-07 - Sci-fi UI Click Sound
+
+### Goal
+Add an audible click feedback to tab button presses, like a sci-fi game UI.
+
+### Implementation log
+
+- Added `sounds/` folder at project root.
+- Added `GET /sounds/<filename>` Flask route in `server.py` to serve audio files.
+- Added `click.wav` (user-provided sound effect) to `sounds/`.
+- Tab button click handler in `voice_assistant_ui.html` plays `click.wav` via `Audio.cloneNode()` on every press.
+- Added `.gitignore` exceptions `!sounds/*.wav` and `!sounds/*.mp3` so sound files are tracked.
+
+### Files touched
+- ✅ `sounds/click.wav` (NEW)
+- ✅ `server.py` (/sounds/ route)
+- ✅ `voice_assistant_ui.html` (Audio playback on tab click)
+- ✅ `.gitignore` (sounds exceptions)
