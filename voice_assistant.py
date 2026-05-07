@@ -26,7 +26,12 @@ from typing import Callable, Optional
 import google.generativeai as genai
 import numpy as np
 import sounddevice as sd
-import whisper
+try:
+    from faster_whisper import WhisperModel as _FasterWhisperModel
+    _FASTER_WHISPER = True
+except ImportError:
+    import whisper  # noqa: F401
+    _FASTER_WHISPER = False
 import yaml
 from dotenv import load_dotenv
 from scipy.io.wavfile import write as wav_write
@@ -56,8 +61,17 @@ AUTO_SUMMARIZE_AFTER = CFG.get("memory", {}).get("auto_summarize_after", 20)
 TTS_ENGINE         = CFG["tts"]["engine"]
 
 # ─── Startup: load Whisper once ────────────────────────────────────────────────
-print(f"[AXIOM] Loading Whisper ({CFG['whisper']['model']})…")
-_whisper = whisper.load_model(CFG["whisper"]["model"])
+_whisper_model_name = CFG["whisper"]["model"]
+if _FASTER_WHISPER:
+    print(f"[AXIOM] Loading faster-whisper ({_whisper_model_name})…")
+    _whisper = _FasterWhisperModel(
+        _whisper_model_name,
+        device="cpu",
+        compute_type="int8",
+    )
+else:
+    print(f"[AXIOM] Loading Whisper ({_whisper_model_name})…")
+    _whisper = whisper.load_model(_whisper_model_name)
 print("[AXIOM] Whisper ready.")
 
 # ─── Startup: init pygame mixer if using edge TTS ─────────────────────────────
@@ -227,22 +241,42 @@ def record_audio(wait_for_speech_seconds: Optional[float] = None) -> Optional[st
 def transcribe(audio_path: str) -> str:
     _send("state", {"state": "transcribing"})
     whisper_cfg = CFG.get("whisper", {}) or {}
-    options = {
-        "fp16": False,
-        "temperature": float(whisper_cfg.get("temperature", 0) or 0),
-        "condition_on_previous_text": bool(whisper_cfg.get("condition_on_previous_text", False)),
-    }
-    if whisper_cfg.get("language"):
-        options["language"] = whisper_cfg["language"]
-    if whisper_cfg.get("initial_prompt"):
-        options["initial_prompt"] = whisper_cfg["initial_prompt"]
-    if whisper_cfg.get("no_speech_threshold") is not None:
-        options["no_speech_threshold"] = float(whisper_cfg["no_speech_threshold"])
-    if whisper_cfg.get("logprob_threshold") is not None:
-        options["logprob_threshold"] = float(whisper_cfg["logprob_threshold"])
-    result = _whisper.transcribe(audio_path, **options)
+
+    if _FASTER_WHISPER:
+        options = {
+            "beam_size": 1,
+            "temperature": float(whisper_cfg.get("temperature", 0) or 0),
+            "condition_on_previous_text": bool(whisper_cfg.get("condition_on_previous_text", False)),
+        }
+        if whisper_cfg.get("language"):
+            options["language"] = whisper_cfg["language"]
+        if whisper_cfg.get("initial_prompt"):
+            options["initial_prompt"] = whisper_cfg["initial_prompt"]
+        if whisper_cfg.get("no_speech_threshold") is not None:
+            options["no_speech_threshold"] = float(whisper_cfg["no_speech_threshold"])
+        if whisper_cfg.get("logprob_threshold") is not None:
+            options["log_prob_threshold"] = float(whisper_cfg["logprob_threshold"])
+        segments, _ = _whisper.transcribe(audio_path, **options)
+        raw = " ".join(s.text for s in segments)
+    else:
+        options = {
+            "fp16": False,
+            "temperature": float(whisper_cfg.get("temperature", 0) or 0),
+            "condition_on_previous_text": bool(whisper_cfg.get("condition_on_previous_text", False)),
+        }
+        if whisper_cfg.get("language"):
+            options["language"] = whisper_cfg["language"]
+        if whisper_cfg.get("initial_prompt"):
+            options["initial_prompt"] = whisper_cfg["initial_prompt"]
+        if whisper_cfg.get("no_speech_threshold") is not None:
+            options["no_speech_threshold"] = float(whisper_cfg["no_speech_threshold"])
+        if whisper_cfg.get("logprob_threshold") is not None:
+            options["logprob_threshold"] = float(whisper_cfg["logprob_threshold"])
+        result = _whisper.transcribe(audio_path, **options)
+        raw = result.get("text", "")
+
     os.unlink(audio_path)
-    text = clean_text(result.get("text", ""), collapse_whitespace=True)
+    text = clean_text(raw, collapse_whitespace=True)
     print(console_text(f"[AXIOM] You said: {text}"))
     return text
 

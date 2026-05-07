@@ -3,7 +3,8 @@
 
 # Core AI
 google-generativeai
-openai-whisper
+faster-whisper          # ~4x faster STT; falls back to openai-whisper if not installed
+openai-whisper          # fallback if faster-whisper unavailable
 
 # Audio recording
 sounddevice
