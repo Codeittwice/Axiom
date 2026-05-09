@@ -76,6 +76,46 @@ class Phase6AdvancedToolsTest(unittest.TestCase):
         self.assertEqual(tools._default_task_priority("train the wake word model"), "high")
         self.assertEqual(tools._default_task_priority("buy milk"), "")
 
+    def test_list_tasks_filters_high_priority_for_voice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = copy.deepcopy(tools._CFG)
+            cfg["obsidian"] = {
+                "vault_path": tmp,
+                "inbox_note": "AXIOM Inbox.md",
+                "task_archive_note": "AXIOM Done.md",
+                "default_project": "AXIOM",
+            }
+            with patch.object(tools, "_CFG", cfg):
+                tools.capture_task("Fix AXIOM recognition", priority="high")
+                tools.capture_task("Buy milk", priority="low")
+
+                result = tools.list_tasks(priority="high")
+
+            self.assertIn("Fix AXIOM recognition", result)
+            self.assertNotIn("Buy milk", result)
+
+    def test_task_formatter_cleans_metadata_and_deduplicates(self):
+        tasks = [
+            {
+                "text": "Finish problem set due:: 2026-05-12 priority:: high course:: 32SPH",
+                "due": "2026-05-12",
+                "priority": "high",
+                "course": "32SPH",
+            },
+            {
+                "text": "Finish problem set due:: 2026-05-12 priority:: high course:: 32SPH",
+                "due": "2026-05-12",
+                "priority": "high",
+                "course": "32SPH",
+            },
+        ]
+
+        result = tools._format_tasks_for_voice(tasks, "empty")
+
+        self.assertEqual(result.count("Finish problem set"), 1)
+        self.assertNotIn("priority::", result)
+        self.assertNotIn("course::", result)
+
 
 if __name__ == "__main__":
     unittest.main()

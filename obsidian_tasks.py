@@ -167,6 +167,34 @@ def upcoming_tasks(config: dict[str, Any], days: int = 7, limit: int = 20) -> li
     return items[:limit]
 
 
+def list_tasks(
+    config: dict[str, Any],
+    status: str = "open",
+    priority: str = "",
+    project: str = "",
+    course: str = "",
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    priority = priority.strip().lower()
+    if priority and priority not in {"low", "medium", "high"}:
+        raise ObsidianTaskError("Priority must be low, medium, or high.")
+    project = project.strip().lower()
+    course = course.strip().lower()
+
+    items = []
+    for task in scan_tasks(config, status or "open"):
+        if priority and task.get("priority", "").lower() != priority:
+            continue
+        if project and task.get("project", "").lower() != project:
+            continue
+        if course and task.get("course", "").lower() != course:
+            continue
+        items.append(task)
+        if limit and len(items) >= limit:
+            break
+    return items
+
+
 def capture_task(
     config: dict[str, Any],
     text: str,

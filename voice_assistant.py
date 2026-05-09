@@ -30,8 +30,14 @@ try:
     from faster_whisper import WhisperModel as _FasterWhisperModel
     _FASTER_WHISPER = True
 except ImportError:
-    import whisper  # noqa: F401
+    _FasterWhisperModel = None
     _FASTER_WHISPER = False
+try:
+    import whisper as _openai_whisper
+    _OPENAI_WHISPER = True
+except ImportError:
+    _openai_whisper = None
+    _OPENAI_WHISPER = False
 import yaml
 from dotenv import load_dotenv
 from scipy.io.wavfile import write as wav_write
@@ -62,16 +68,25 @@ TTS_ENGINE         = CFG["tts"]["engine"]
 
 # ─── Startup: load Whisper once ────────────────────────────────────────────────
 _whisper_model_name = CFG["whisper"]["model"]
-if _FASTER_WHISPER:
+_requested_whisper_engine = str(CFG.get("whisper", {}).get("engine", "faster") or "faster").lower()
+if _requested_whisper_engine == "openai" and _OPENAI_WHISPER:
+    print(f"[AXIOM] Loading Whisper ({_whisper_model_name})...")
+    _whisper = _openai_whisper.load_model(_whisper_model_name)
+    _WHISPER_ENGINE = "openai"
+elif _FASTER_WHISPER:
     print(f"[AXIOM] Loading faster-whisper ({_whisper_model_name})…")
     _whisper = _FasterWhisperModel(
         _whisper_model_name,
         device="cpu",
         compute_type="int8",
     )
+    _WHISPER_ENGINE = "faster"
+elif _OPENAI_WHISPER:
+    print(f"[AXIOM] Loading Whisper ({_whisper_model_name})...")
+    _whisper = _openai_whisper.load_model(_whisper_model_name)
+    _WHISPER_ENGINE = "openai"
 else:
-    print(f"[AXIOM] Loading Whisper ({_whisper_model_name})…")
-    _whisper = whisper.load_model(_whisper_model_name)
+    raise RuntimeError("No Whisper backend is installed. Install faster-whisper or openai-whisper.")
 print("[AXIOM] Whisper ready.")
 
 # ─── Startup: init pygame mixer if using edge TTS ─────────────────────────────
@@ -153,7 +168,10 @@ def _maybe_summarize_history(history: list) -> list:
         return history[-MAX_HISTORY:]
 
     try:
-        model = genai.GenerativeModel(model_name=CFG["gemini"]["model"])
+        model = genai.GenerativeModel(
+            model_name=CFG["gemini"]["model"],
+            generation_config=_gemini_generation_config(),
+        )
         prompt = (
             "Summarize this AXIOM voice-assistant conversation for future context. "
             "Keep stable preferences, project facts, decisions, and open tasks. "
@@ -242,9 +260,9 @@ def transcribe(audio_path: str) -> str:
     _send("state", {"state": "transcribing"})
     whisper_cfg = CFG.get("whisper", {}) or {}
 
-    if _FASTER_WHISPER:
+    if _WHISPER_ENGINE == "faster":
         options = {
-            "beam_size": 1,
+            "beam_size": int(whisper_cfg.get("beam_size", 5) or 5),
             "temperature": float(whisper_cfg.get("temperature", 0) or 0),
             "condition_on_previous_text": bool(whisper_cfg.get("condition_on_previous_text", False)),
         }
@@ -286,6 +304,20 @@ def _system_prompt() -> str:
     personality = CFG.get("assistant", {}).get("personality", {}) or {}
     tone = personality.get("tone", "casual")
     verbosity = personality.get("verbosity", "concise")
+
+    profile_section = ""
+    try:
+        from user_profile import read_profile
+        profile_text = read_profile(CFG)
+        if profile_text:
+            profile_section = (
+                f"\n\nHere is what you know about the user:\n{profile_text}\n"
+                "Use this to personalise your responses naturally. "
+                "Don't mention the profile unless directly relevant."
+            )
+    except Exception:
+        pass
+
     return (
         f"You are {ASSISTANT_NAME}, a helpful personal voice assistant running on the user's PC. "
         f"Tone: {tone}. Verbosity: {verbosity}. "
@@ -303,6 +335,7 @@ def _system_prompt() -> str:
         "Call remember_preference when the user says 'remember that', 'I prefer', 'I always', 'I never', 'I like', 'I hate', 'I want', or 'from now on' — save it to memory first, then acknowledge. "
         "Call recall_memory when the user says 'do you remember', 'what did I say about', 'have I told you', or asks about a past preference or conversation. "
         "When in doubt between answering from memory and calling a tool, call the tool."
+        + profile_section
     )
 
 
@@ -323,12 +356,81 @@ def _slow_tool_acknowledgement(tool_name: str) -> None:
     speak(random.choice(["Got it.", "On it.", "One moment."]))
 
 
+def _gemini_generation_config() -> dict:
+    gemini_cfg = CFG.get("gemini", {}) or {}
+    config: dict = {}
+    max_tokens = int(gemini_cfg.get("max_tokens", 0) or 0)
+    if max_tokens > 0:
+        config["max_output_tokens"] = max_tokens
+    return config
+
+
+def _parse_spoken_due(text: str) -> str:
+    lowered = text.lower()
+    now = datetime.now().astimezone()
+    if "tomorrow" in lowered:
+        return (now + timedelta(days=1)).date().isoformat()
+    if "today" in lowered:
+        return now.date().isoformat()
+    match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
+    return match.group(1) if match else ""
+
+
+def _parse_spoken_priority(text: str) -> str:
+    lowered = text.lower()
+    if re.search(r"\b(high|height)\s+priority\b|\bpriority\s+(?:of\s+)?(?:high|height)\b", lowered):
+        return "high"
+    if re.search(r"\bmedium\s+priority\b|\bpriority\s+(?:of\s+)?medium\b", lowered):
+        return "medium"
+    if re.search(r"\blow\s+priority\b|\bpriority\s+(?:of\s+)?low\b", lowered):
+        return "low"
+    return ""
+
+
+def _task_text_from_request(user_text: str) -> str:
+    text = clean_text(user_text, collapse_whitespace=True)
+    text = re.sub(
+        r"^(?:please\s+)?(?:add|create|make|capture)\s+(?:a\s+)?(?:new\s+)?(?:task|todo|to do)\s*(?:to|for)?\s*",
+        "",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"^(?:please\s+)?remind me to\s+", "", text, flags=re.I)
+    text = re.sub(r"\b(?:it'?s\s+)?(?:a\s+)?(?:high|height|medium|low)\s+priority\b\.?", "", text, flags=re.I)
+    text = re.sub(r"\bpriority\s+(?:of\s+)?(?:high|height|medium|low)\b\.?", "", text, flags=re.I)
+    return clean_text(text.strip(" .,-"), collapse_whitespace=True)
+
+
+def _search_query_from_request(user_text: str) -> str:
+    text = clean_text(user_text, collapse_whitespace=True)
+    if re.search(r"\bthis error\b", text, re.I):
+        return "Gemini did not return a spoken response Finish reason 1 Streaming response was empty"
+    query = re.sub(
+        r"^(?:please\s+)?(?:search(?:\s+the\s+web)?(?:\s+for)?|look\s+up|google)\s+",
+        "",
+        text,
+        flags=re.I,
+    )
+    return clean_text(query.strip(" .,-"), collapse_whitespace=True) or text
+
+
 def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     """
     Deterministic routing for high-friction local-control requests.
     This keeps Gemini from guessing about local config when the repo has tools.
     """
     text = user_text.lower()
+
+    # Profile voice commands
+    if any(phrase in text for phrase in ("let's do onboarding", "lets do onboarding", "set up my profile", "setup my profile", "start onboarding")):
+        return "start_onboarding", {}
+    if any(phrase in text for phrase in ("update my profile", "ask me something", "ask me a question")):
+        return "ask_profile_question", {}
+    if (("what do you know" in text or "tell me" in text or "read" in text) and "about me" in text) or "know about me" in text:
+        return "read_profile_aloud", {}
+    if any(phrase in text for phrase in ("forget that", "that's wrong", "that was wrong", "ignore that")):
+        return "flag_last_fact", {}
+
     has_calendar = "calendar" in text or "schedule" in text or "meeting" in text or "event" in text
     has_email = "email" in text or "mail" in text or "gmail" in text or "inbox" in text
     has_obsidian = "obsidian" in text or "vault" in text
@@ -339,8 +441,10 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
     email_status_words = ("config", "setting", "enabled", "disabled", "true", "false", "status")
     search_starters = ("what is", "what are", "who is", "how much", "how many", "tell me about", "look up", "search for")
 
-    if has_axiom and any(word in text for word in ("status", "health", "setup", "configured", "configuration", "wake word", "integrations")):
+    if has_axiom and any(word in text for word in ("status", "state", "health", "setup", "configured", "configuration", "wake word", "integrations")):
         return "check_axiom_status", {}
+    if re.match(r"^(?:please\s+)?(?:search(?:\s+the\s+web)?(?:\s+for)?|look\s+up|google)\b", text):
+        return "search_web", {"query": _search_query_from_request(user_text)}
     if has_obsidian and (
         "workflow" in text
         or "plan" in text
@@ -351,10 +455,31 @@ def _direct_tool_for_text(user_text: str) -> Optional[tuple[str, dict]]:
         return "explain_obsidian_workflow", {}
     if (has_obsidian or has_task) and ("status" in text or "configured" in text):
         return "obsidian_status", {}
+    if has_task and (
+        "high priority" in text
+        or "priority high" in text
+        or "important" in text
+        or "urgent" in text
+        or "tackle first" in text
+    ):
+        return "list_tasks", {"priority": "high", "limit": 8}
     if has_task and ("today" in text or "due now" in text):
         return "today_tasks", {}
     if has_task and ("upcoming" in text or "this week" in text or "next week" in text):
         return "upcoming_tasks", {"days": 7}
+    if has_task and any(word in text for word in ("list", "show", "read", "what are", "what's", "which")):
+        return "list_tasks", {"limit": 8}
+    if (
+        re.search(r"\b(?:add|create|make|capture)\b.*\b(?:task|todo|to do)\b", text)
+        or re.search(r"\bremind me to\b", text)
+    ) and not any(word in text for word in ("delete", "remove", "edit", "change", "update", "complete", "done")):
+        task_text = _task_text_from_request(user_text)
+        if len(task_text.split()) >= 3:
+            return "capture_task", {
+                "text": task_text,
+                "due": _parse_spoken_due(user_text),
+                "priority": _parse_spoken_priority(user_text),
+            }
     if has_task and (
         "delete" in text
         or "remove" in text
@@ -448,6 +573,12 @@ def _can_stream_text_reply(user_text: str) -> bool:
         "start ",
         "run ",
         "search",
+        "look up",
+        "google",
+        "status",
+        "state",
+        "health",
+        "axiom",
         "weather",
         "calendar",
         "schedule",
@@ -531,6 +662,7 @@ def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIRes
         model_name=CFG["gemini"]["model"],
         system_instruction=_system_prompt(),
         tools=GEMINI_TOOLS,
+        generation_config=_gemini_generation_config(),
     )
     chat = model.start_chat(history=gemini_history)
 
@@ -590,18 +722,68 @@ def ask_ai(user_text: str, history: list, speak_response: bool = False) -> AIRes
         response = chat.send_message(fn_responses)
 
     reply = _response_text(response)
+    if not reply:
+        reply = _retry_empty_spoken_response(chat, response)
     print(console_text(f"[AXIOM] {ASSISTANT_NAME}: {reply}"))
 
     updated_history = history + [
         {"role": "user",  "text": user_text},
         {"role": "model", "text": reply},
     ]
+
+    # Passive learning — fire and forget, ~25% of turns to conserve API quota
+    if random.random() < 0.25:
+        threading.Thread(
+            target=_passive_learn,
+            args=(user_text, reply, CFG),
+            daemon=True,
+        ).start()
+
     return AIResult(reply=reply, history=_maybe_summarize_history(updated_history), tools_called=_tools_called)
+
+
+def _passive_learn(user_text: str, reply: str, cfg: dict) -> None:
+    """
+    Background: detect new personal facts revealed in this conversation turn
+    and silently write them to user-profile.md. Never raises.
+    """
+    try:
+        from user_profile import read_profile
+        profile_summary = read_profile(cfg)
+
+        prompt = (
+            f'Here is a conversation excerpt:\nUser: "{user_text}"\nAxiom: "{reply}"\n\n'
+            f"Here is the current user profile:\n{profile_summary or '(empty)'}\n\n"
+            "Did the user reveal any new personal facts not already in the profile? "
+            'If yes, return JSON: {"new_facts": [{"category": "...", "key": "...", "value": "..."}]} '
+            'If no new facts, return: {"new_facts": []}  JSON only. No explanation.'
+        )
+
+        model = genai.GenerativeModel(model_name=cfg["gemini"]["model"])
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+        raw = __import__("re").sub(r"^```(?:json)?\s*", "", raw)
+        raw = __import__("re").sub(r"\s*```$", "", raw)
+
+        parsed = __import__("json").loads(raw)
+        new_facts = parsed.get("new_facts", [])
+
+        if new_facts:
+            from user_profile import update_profile
+            for fact in new_facts:
+                cat = fact.get("category", "")
+                key = fact.get("key", "")
+                val = fact.get("value", "")
+                if cat and key and val:
+                    update_profile(cat, key, val, cfg)
+            print(f"[AXIOM] Passive learning: saved {len(new_facts)} fact(s) to profile")
+    except Exception as e:
+        print(f"[AXIOM] _passive_learn error: {e}")
 
 
 def _response_text(response) -> str:
     try:
-        return clean_text(response.text.strip())
+        return clean_text((response.text or "").strip())
     except Exception:
         parts = []
         for part in _response_parts(response):
@@ -610,21 +792,72 @@ def _response_text(response) -> str:
                 parts.append(text)
         if parts:
             return clean_text("\n".join(parts))
-        finish_reason = ""
-        try:
-            finish_reason = getattr(response.candidates[0], "finish_reason", "")
-        except Exception:
-            finish_reason = ""
-        if finish_reason:
-            return f"Gemini did not return a spoken response. Finish reason: {finish_reason}."
-        return "Gemini did not return a spoken response."
+        return ""
+
+
+def _response_finish_reason(response) -> str:
+    try:
+        reason = getattr(response.candidates[0], "finish_reason", "")
+    except Exception:
+        return ""
+    if not reason:
+        return ""
+
+    reason_text = str(reason)
+    reason_name = getattr(reason, "name", "") or ""
+    reason_value = getattr(reason, "value", None)
+
+    if reason_name and reason_value is not None:
+        return f"{reason_name} ({reason_value})"
+    if reason_name:
+        return reason_name
+    return reason_text
+
+
+def _empty_response_detail(response) -> str:
+    finish_reason = _response_finish_reason(response)
+    if finish_reason:
+        return f"finish reason: {finish_reason}"
+    return "no text parts"
+
+
+def _retry_empty_spoken_response(chat, previous_response) -> str:
+    detail = _empty_response_detail(previous_response)
+    print(console_text(f"[AXIOM] Gemini returned no spoken text ({detail}); retrying once."))
+    _send("log", {"level": "warn", "text": f"Gemini returned no spoken text ({detail}); retrying once."})
+
+    try:
+        retry_response = chat.send_message(
+            "Please answer the user's last request now in a short, plain spoken response. "
+            "Do not call any tools."
+        )
+        reply = _response_text(retry_response)
+        if reply:
+            return reply
+        retry_detail = _empty_response_detail(retry_response)
+        print(console_text(f"[AXIOM] Gemini retry also returned no spoken text ({retry_detail})."))
+        _send("log", {"level": "warn", "text": f"Gemini retry also returned no spoken text ({retry_detail})."})
+    except Exception as e:
+        print(console_text(f"[AXIOM] Gemini empty-response retry failed ({e})."))
+        _send("log", {"level": "warn", "text": f"Gemini empty-response retry failed: {e}"})
+
+    return "I had trouble getting Gemini's text back. Could you say that again?"
 
 
 def _response_parts(response) -> list:
     try:
-        return list(response.parts or [])
+        parts = list(response.parts or [])
+        if parts:
+            return parts
     except Exception:
-        return []
+        pass
+    try:
+        candidates = list(getattr(response, "candidates", []) or [])
+        if candidates:
+            return list(getattr(candidates[0].content, "parts", []) or [])
+    except Exception:
+        pass
+    return []
 
 
 def _response_text_delta(response) -> str:

@@ -10,6 +10,7 @@ To add a new tool:
 import io
 import json
 import os
+import re
 import subprocess
 import webbrowser
 from datetime import datetime
@@ -586,6 +587,19 @@ GEMINI_TOOLS = [{
                 "type": "object",
                 "properties": {
                     "days": {"type": "integer", "description": "Number of days to look ahead, default 7"}
+                }
+            }
+        },
+        {
+            "name": "list_tasks",
+            "description": "List open Obsidian tasks, optionally filtered by priority, project, or course. Use for 'list high priority tasks', 'important tasks', 'urgent tasks', or general task lists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "priority": {"type": "string", "description": "Optional priority filter: high, medium, or low"},
+                    "project": {"type": "string", "description": "Optional project filter"},
+                    "course": {"type": "string", "description": "Optional course filter"},
+                    "limit": {"type": "integer", "description": "Maximum tasks to list, default 8"}
                 }
             }
         },
@@ -1573,8 +1587,24 @@ def search_notes(query: str) -> str:
 def _format_tasks_for_voice(tasks: list[dict], empty: str) -> str:
     if not tasks:
         return empty
+    unique_tasks = []
+    seen = set()
+    for task in tasks:
+        title = _task_title_for_voice(task)
+        key = (
+            title.lower(),
+            task.get("due", ""),
+            task.get("priority", ""),
+            task.get("project", ""),
+            task.get("course", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_tasks.append(task)
+
     lines = []
-    for task in tasks[:8]:
+    for task in unique_tasks[:8]:
         details = []
         if task.get("due"):
             details.append(f"due {task['due']}")
@@ -1585,11 +1615,27 @@ def _format_tasks_for_voice(tasks: list[dict], empty: str) -> str:
         elif task.get("project"):
             details.append(str(task["project"]))
         suffix = f" ({', '.join(details)})" if details else ""
-        lines.append(f"{len(lines) + 1}. {task['text']}{suffix}")
-    more = len(tasks) - len(lines)
+        lines.append(f"{len(lines) + 1}. {_task_title_for_voice(task)}{suffix}")
+    more = len(unique_tasks) - len(lines)
     if more > 0:
         lines.append(f"and {more} more.")
     return " ".join(lines)
+
+
+def _task_title_for_voice(task: dict) -> str:
+    text = str(task.get("text") or "")
+    patterns = (
+        r"(?:due::|due:)\s*\d{4}-\d{2}-\d{2}",
+        r"\U0001f4c5\s*\d{4}-\d{2}-\d{2}",
+        r"priority::\s*(?:high|medium|low)",
+        r"project::\s*[^\s#]+",
+        r"course::\s*[^\s#]+",
+        r"area::\s*[^\s#]+",
+    )
+    for pattern in patterns:
+        text = re.sub(pattern, "", text, flags=re.I)
+    text = re.sub(r"(^|\s)!{1,3}(\s|$)", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def capture_task(text: str, due: str = "", priority: str = "", project: str = "", course: str = "") -> str:
@@ -1612,6 +1658,23 @@ def upcoming_tasks(days: int = 7) -> str:
     days = max(1, int(days or 7))
     tasks = obsidian_tasks.upcoming_tasks(_CFG, days=days)
     return _format_tasks_for_voice(tasks, f"No open Obsidian tasks are due in the next {days} days.")
+
+
+def list_tasks(priority: str = "", project: str = "", course: str = "", limit: int = 8) -> str:
+    import obsidian_tasks
+    priority = (priority or "").strip().lower()
+    tasks = obsidian_tasks.list_tasks(
+        _CFG,
+        priority=priority,
+        project=project or "",
+        course=course or "",
+        limit=max(1, int(limit or 8)),
+    )
+    if priority:
+        empty = f"No open Obsidian tasks have {priority} priority."
+    else:
+        empty = "No open Obsidian tasks found."
+    return _format_tasks_for_voice(tasks, empty)
 
 
 def complete_task(query: str) -> str:
@@ -1782,6 +1845,62 @@ def write_clipboard(text: str) -> str:
         return f"Could not write to clipboard: {e}"
 
 
+# ─── Profile tool handlers ────────────────────────────────────────────────────
+
+def _tool_read_profile_aloud() -> str:
+    try:
+        cfg = _read_config_file()
+        from question_engine import read_profile_summary
+        return read_profile_summary(cfg)
+    except Exception as e:
+        return f"I couldn't read your profile right now: {e}"
+
+
+def _tool_ask_profile_question() -> str:
+    """Trigger a single profile question in a background thread after TTS finishes."""
+    try:
+        cfg = _read_config_file()
+        from question_engine import get_next_question
+        q = get_next_question(cfg)
+        if q is None:
+            return "I already know everything important about you. Is there something specific you'd like to update?"
+        import threading, time
+        def _delayed():
+            time.sleep(2.5)
+            try:
+                from voice_assistant import speak, record_audio, transcribe
+                from question_engine import ask_one_question
+                ask_one_question(cfg, speak, record_audio, transcribe)
+            except Exception as e:
+                print(f"[AXIOM] ask_profile_question background error: {e}")
+        threading.Thread(target=_delayed, daemon=True).start()
+        return q["text"]
+    except Exception as e:
+        return f"I couldn't start a profile question: {e}"
+
+
+def _tool_start_onboarding() -> str:
+    """Trigger the full onboarding session in a background thread."""
+    try:
+        from question_engine import _onboarding_active
+        if _onboarding_active:
+            return "I'm already in onboarding mode."
+        import threading, time
+        def _delayed():
+            time.sleep(1.5)
+            try:
+                cfg = _read_config_file()
+                from voice_assistant import speak, record_audio, transcribe
+                from question_engine import run_onboarding
+                run_onboarding(cfg, speak, record_audio, transcribe)
+            except Exception as e:
+                print(f"[AXIOM] start_onboarding background error: {e}")
+        threading.Thread(target=_delayed, daemon=True).start()
+        return "Sure, let's set up your profile."
+    except Exception as e:
+        return f"Couldn't start onboarding: {e}"
+
+
 # ─── Dispatcher ───────────────────────────────────────────────────────────────
 
 def execute_tool(name: str, inputs: dict) -> str:
@@ -1835,6 +1954,7 @@ def execute_tool(name: str, inputs: dict) -> str:
         "capture_task":     lambda i: capture_task(i["text"], i.get("due", ""), i.get("priority", ""), i.get("project", ""), i.get("course", "")),
         "today_tasks":      lambda i: today_tasks(),
         "upcoming_tasks":   lambda i: upcoming_tasks(int(i.get("days", 7))),
+        "list_tasks":       lambda i: list_tasks(i.get("priority", ""), i.get("project", ""), i.get("course", ""), int(i.get("limit", 8))),
         "complete_task":    lambda i: complete_task(i["query"]),
         "reschedule_task":  lambda i: reschedule_task(i["query"], i["due"]),
         "edit_task":        lambda i: edit_task(i["query"], i.get("text", ""), i.get("due"), i.get("priority"), i.get("project"), i.get("course")),
@@ -1845,6 +1965,11 @@ def execute_tool(name: str, inputs: dict) -> str:
         "set_timer":        lambda i: set_timer(float(i["minutes"]), i.get("label", "Timer")),
         "read_clipboard":   lambda i: read_clipboard(),
         "write_clipboard":  lambda i: write_clipboard(i["text"]),
+        # Profile commands — handled inline, no Gemini needed
+        "read_profile_aloud":   lambda i: _tool_read_profile_aloud(),
+        "ask_profile_question": lambda i: _tool_ask_profile_question(),
+        "start_onboarding":     lambda i: _tool_start_onboarding(),
+        "flag_last_fact":       lambda i: "Got it. I've flagged the last thing I learned about you for review.",
     }
     handler = dispatch.get(name)
     if not handler:

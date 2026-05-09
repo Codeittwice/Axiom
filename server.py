@@ -33,6 +33,7 @@ app      = Flask(__name__)
 app.config["SECRET_KEY"] = "axiom-local-secret"
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _config_lock = threading.Lock()
+_text_chat_lock = threading.Lock()
 _system_ready = False
 
 
@@ -113,6 +114,54 @@ def sounds(filename):
     return send_file(f"sounds/{filename}")
 
 
+@app.route("/api/profile", methods=["GET"])
+def api_get_profile():
+    cfg = _load_config_file()
+    try:
+        from user_profile import read_profile, get_missing_topics
+        return jsonify({"profile": read_profile(cfg), "missing": get_missing_topics(cfg)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/profile/update", methods=["POST"])
+def api_update_profile():
+    data = request.get_json(force=True) or {}
+    category = data.get("category", "")
+    key = data.get("key", "")
+    value = data.get("value", "")
+    if not (category and key and value):
+        return jsonify({"error": "category, key, and value are required"}), 400
+    cfg = _load_config_file()
+    try:
+        from user_profile import update_profile
+        update_profile(category, key, value, cfg)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/onboarding/start", methods=["POST"])
+def api_start_onboarding():
+    try:
+        from question_engine import _onboarding_active
+        if _onboarding_active:
+            return jsonify({"ok": False, "message": "Onboarding already in progress"})
+        cfg = _load_config_file()
+        def _run():
+            import time as _t; _t.sleep(1)
+            try:
+                from voice_assistant import speak, record_audio, transcribe
+                from question_engine import run_onboarding
+                run_onboarding(cfg, speak, record_audio, transcribe)
+            except Exception as e:
+                print(f"[AXIOM] Onboarding route error: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+        return jsonify({"ok": True, "message": "Onboarding started"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/config", methods=["GET"])
 def api_get_config():
     return jsonify(_load_config_file())
@@ -166,6 +215,54 @@ def api_conversations():
     limit = int(request.args.get("limit", 100))
     history = _conversation_history()
     return jsonify({"items": history[-limit:], "total": len(history)})
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.get_json(force=True) or {}
+    text = str(data.get("text", "")).strip()
+    if not text:
+        return jsonify({"ok": False, "message": "Message is empty"}), 400
+
+    from voice_assistant import ask_ai, load_history, save_history, set_emit
+
+    set_emit(emit)
+    session_start = time.time()
+    emit("transcript", {"text": text, "source": "text"})
+    emit("state", {"state": "thinking"})
+
+    try:
+        with _text_chat_lock:
+            history = load_history()
+            result = ask_ai(text, history, speak_response=False)
+            reply = result.reply
+            history = result.history
+            tools_called = result.tools_called
+            save_history(history)
+
+        emit("response", {"text": reply, "source": "text"})
+        emit("state", {"state": "idle"})
+
+        duration = round(time.time() - session_start, 2)
+        try:
+            from session_logger import log_session
+            log_session(text, reply, tools_called, duration)
+        except Exception as e:
+            emit("log", {"level": "warn", "text": f"Session log failed: {e}"})
+
+        try:
+            from brain import crystallise
+            crystallise(text, reply, tools_called, CFG, duration)
+        except Exception as e:
+            emit("log", {"level": "warn", "text": f"Brain crystallise failed: {e}"})
+
+        return jsonify({"ok": True, "reply": reply, "tools_called": tools_called})
+    except Exception as e:
+        msg = f"Error communicating with Gemini: {e}"
+        print(f"[AXIOM] {msg}")
+        emit("log", {"level": "error", "text": msg})
+        emit("state", {"state": "idle"})
+        return jsonify({"ok": False, "message": msg}), 500
 
 
 @app.route("/api/test-voice", methods=["POST"])
@@ -680,13 +777,15 @@ def assistant_loop():
         session_start = time.time()
         wait_for_speech = None
         if conversation_open:
-            wait_for_speech = max(1, conversation_open_until - time.monotonic())
-            emit("log", {"level": "system", "text": "Listening for your reply."})
+            # Wait at most follow_up_timeout seconds for the user to start speaking
+            wait_for_speech = max(1.0, min(follow_up_timeout, conversation_open_until - time.monotonic()))
         audio_path = record_audio(wait_for_speech_seconds=wait_for_speech)
         if not audio_path:
             if conversation_open:
                 conversation_open_until = 0.0
-                emit("log", {"level": "system", "text": "Follow-up window closed. Wake word or hotkey required again."})
+                _wake_event.clear()
+                speak("Session timed out. Say the wake word or press the hotkey when you need me.")
+                emit("log", {"level": "system", "text": "Conversation timed out. Returning to wake word mode."})
                 emit("state", {"state": "idle"})
                 continue
             emit("log", {"level": "warn", "text": "No audio detected — try again."})
@@ -709,13 +808,26 @@ def assistant_loop():
             emit("log", {"level": "system", "text": "Session ended."})
             os._exit(0)
 
-        # --- Ask Claude ---
-        try:
-            result = ask_ai(text, history, speak_response=True)
-            reply = result.reply
-            history = result.history
-            tools_called = result.tools_called
+        # --- Stop conversation session ---
+        _stop_phrases = [p.lower() for p in (conversation_cfg.get("stop_phrases") or [])]
+        if _stop_phrases and any(p in text.lower() for p in _stop_phrases):
+            conversation_open_until = 0.0
+            _wake_event.clear()
+            speak("Got it. Session closed. Say the wake word or press the hotkey when you need me.")
+            emit("log", {"level": "system", "text": "Conversation session closed by user."})
+            emit("state", {"state": "idle"})
             save_history(history)
+            continue
+
+        # --- Ask Gemini ---
+        try:
+            with _text_chat_lock:
+                history = load_history()
+                result = ask_ai(text, history, speak_response=True)
+                reply = result.reply
+                history = result.history
+                tools_called = result.tools_called
+                save_history(history)
             emit("response", {"text": reply})
         except Exception as e:
             msg = f"Error communicating with Gemini: {e}"
@@ -726,12 +838,11 @@ def assistant_loop():
 
         # --- Speak ---
         pending_activation = result.interrupted if result.spoke else speak(reply)
-        if pending_activation:
-            emit("log", {"level": "system", "text": "Listening again after interruption."})
-            conversation_open_until = 0.0
-        elif follow_up_enabled and expects_follow_up(reply):
+        if follow_up_enabled:
+            # Keep conversation open after every turn — no wake word needed until stop phrase or timeout
             conversation_open_until = time.monotonic() + follow_up_timeout
-            emit("log", {"level": "system", "text": f"Follow-up listening open for {int(follow_up_timeout)} seconds."})
+            if not pending_activation:
+                emit("log", {"level": "system", "text": "Listening… (say 'stop listening' to end session)"})
         else:
             conversation_open_until = 0.0
 
@@ -794,9 +905,32 @@ if __name__ == "__main__":
     except Exception as _brain_err:
         print(f"[AXIOM] Brain init skipped: {_brain_err}")
 
+    try:
+        from user_profile import init_profile, get_missing_topics
+        init_profile(CFG)
+    except Exception as _profile_err:
+        print(f"[AXIOM] Profile init skipped: {_profile_err}")
+
     # Assistant runs in a background thread
     t = threading.Thread(target=assistant_loop, daemon=True)
     t.start()
+
+    # Auto-onboarding: if fewer than 8 of 26 profile fields are filled, start onboarding
+    try:
+        from user_profile import get_missing_topics
+        if len(get_missing_topics(CFG)) > 18:
+            def _auto_onboard():
+                import time as _t
+                _t.sleep(5)  # let the greeting finish first
+                try:
+                    from voice_assistant import speak, record_audio, transcribe
+                    from question_engine import run_onboarding
+                    run_onboarding(CFG, speak, record_audio, transcribe)
+                except Exception as e:
+                    print(f"[AXIOM] Auto-onboarding error: {e}")
+            threading.Thread(target=_auto_onboard, daemon=True).start()
+    except Exception as _ob_err:
+        print(f"[AXIOM] Auto-onboarding check skipped: {_ob_err}")
 
     # Open browser after server is up
     if CFG["server"]["open_browser"] and not electron_mode:

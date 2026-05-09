@@ -168,8 +168,9 @@ def run_reflection(cfg: dict) -> list[dict]:
         return new_suggestions
 
     except Exception as e:
-        print(f"[AXIOM] Reflection failed: {e}")
-        return []
+        import traceback
+        print(f"[AXIOM] Reflection failed: {e}\n{traceback.format_exc()}")
+        raise
 
 
 def build_skill_registry(cfg: dict) -> dict:

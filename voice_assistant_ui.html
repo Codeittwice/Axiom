@@ -481,6 +481,85 @@
       .terminal-body::-webkit-scrollbar-thumb {
         background: var(--border2);
       }
+      .terminal-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .composer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.6rem;
+        align-items: center;
+      }
+      .composer input {
+        min-width: 0;
+        height: 40px;
+        background: #020509;
+        border: 1px solid var(--border2);
+        border-radius: 2px;
+        color: var(--text);
+        padding: 0 0.85rem;
+        font-size: 0.88rem;
+      }
+      .composer input::placeholder {
+        color: var(--muted);
+      }
+      .composer button {
+        height: 40px;
+        border: 1px solid rgba(0, 212, 255, 0.35);
+        border-radius: 2px;
+        background: rgba(0, 212, 255, 0.08);
+        color: var(--accent);
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        padding: 0 1rem;
+        cursor: pointer;
+        text-transform: uppercase;
+      }
+      .composer button:hover:not(:disabled) {
+        background: rgba(0, 212, 255, 0.16);
+      }
+      .composer button:disabled {
+        color: var(--muted);
+        border-color: var(--border2);
+        background: var(--panel);
+        cursor: wait;
+      }
+      .activity-feed {
+        min-height: 1.4rem;
+        max-height: 120px;
+        overflow-y: auto;
+        scrollbar-width: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        padding: 0 0.25rem;
+        font-family: "Share Tech Mono", monospace;
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+      }
+      .activity-feed::-webkit-scrollbar {
+        display: none;
+      }
+      .activity-feed .terminal-empty {
+        margin: 0;
+        text-align: left;
+      }
+      .activity-feed .log-line {
+        font-size: 0.68rem;
+        line-height: 1.35;
+        opacity: 0.82;
+      }
+      .activity-feed .log-prefix {
+        background: transparent;
+        border: 0;
+        padding: 0;
+        min-width: 2.8rem;
+        color: var(--muted);
+      }
       .log-line {
         display: flex;
         gap: 0.75rem;
@@ -1199,9 +1278,10 @@
           </div>
             </div>
 
-            <div class="terminal">
+            <div class="terminal-stack">
+            <div class="terminal conversation">
           <div class="terminal-header">
-            <span>// SESSION LOG</span>
+            <span>// CONVERSATION</span>
             <div class="terminal-dots">
               <span></span><span></span><span></span>
             </div>
@@ -1212,6 +1292,18 @@
             </div>
           </div>
             </div>
+
+            <form class="composer" id="textComposer">
+              <input id="textPrompt" autocomplete="off" placeholder="Type to AXIOM..." />
+              <button id="sendTextBtn" type="submit">Send</button>
+            </form>
+
+            <div class="activity-feed" id="activityBody">
+            <div class="terminal-empty" id="emptyActivity">
+              tools and system notifications
+            </div>
+            </div>
+          </div>
           </div>
 
           <aside class="side-panel right">
@@ -1388,6 +1480,14 @@
               <label>Follow-up Timeout</label
               ><input id="followUpTimeout" type="number" step="5" />
             </div>
+            <div class="field">
+              <label>VAD Silence</label
+              ><input id="vadSilenceDuration" type="number" step="0.1" min="0.3" />
+            </div>
+            <div class="field">
+              <label>VAD Threshold</label
+              ><input id="vadEnergyThreshold" type="number" step="10" min="1" />
+            </div>
           </div>
           <div class="field">
             <label>Voice Preview</label
@@ -1549,9 +1649,17 @@
 
       // ── Terminal log ───────────────────────────────────────────────────────────
       const termBody = document.getElementById("terminalBody");
+      const activityBody = document.getElementById("activityBody");
 
-      function addLog(role, text) {
-        const empty = document.getElementById("emptyLog");
+      function addLog(role, text, channel) {
+        const conversationRole = role === "user" || role === "axiom";
+        const target =
+          channel === "activity" || (!channel && !conversationRole)
+            ? activityBody
+            : termBody;
+        const empty = document.getElementById(
+          target === termBody ? "emptyLog" : "emptyActivity",
+        );
         if (empty) empty.remove();
 
         const labels = {
@@ -1575,8 +1683,31 @@
           role === "system" || role === "warn" ? "log-text muted" : "log-text";
 
         line.innerHTML = `<span class="log-prefix ${roleClass}">${label}</span><span class="${textClass}">${escHtml(text)}</span>`;
-        termBody.appendChild(line);
-        termBody.scrollTop = termBody.scrollHeight;
+        target.appendChild(line);
+        target.scrollTop = target.scrollHeight;
+      }
+
+      async function sendTypedMessage() {
+        const input = document.getElementById("textPrompt");
+        const button = document.getElementById("sendTextBtn");
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        input.disabled = true;
+        button.disabled = true;
+        addLog("system", "Typed message sent.", "activity");
+        try {
+          await api("/api/chat", {
+            method: "POST",
+            body: JSON.stringify({ text }),
+          });
+        } catch (e) {
+          addLog("error", e.message || "Typed message failed.", "activity");
+        } finally {
+          input.disabled = false;
+          button.disabled = false;
+          input.focus();
+        }
       }
 
       function escHtml(s) {
@@ -1611,7 +1742,7 @@
           ...options,
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || res.statusText);
+        if (!res.ok) throw new Error(data.error || data.message || res.statusText);
         return data;
       }
 
@@ -2023,6 +2154,10 @@
         );
         document.getElementById("followUpTimeout").value =
           c.conversation?.follow_up_timeout_seconds ?? 120;
+        document.getElementById("vadSilenceDuration").value =
+          c.audio?.vad_silence_duration ?? 1;
+        document.getElementById("vadEnergyThreshold").value =
+          c.audio?.vad_energy_threshold ?? 50;
         document.getElementById("configEditor").value = pretty(c);
       }
 
@@ -2033,6 +2168,7 @@
         edited.tts = edited.tts || {};
         edited.wake_word = edited.wake_word || {};
         edited.conversation = edited.conversation || {};
+        edited.audio = edited.audio || {};
         edited.assistant.name = document
           .getElementById("assistantName")
           .value.trim();
@@ -2058,6 +2194,12 @@
           document.getElementById("followUpListening").value === "true";
         edited.conversation.follow_up_timeout_seconds = Number(
           document.getElementById("followUpTimeout").value || 120,
+        );
+        edited.audio.vad_silence_duration = Number(
+          document.getElementById("vadSilenceDuration").value || 1,
+        );
+        edited.audio.vad_energy_threshold = Number(
+          document.getElementById("vadEnergyThreshold").value || 50,
         );
         await api("/api/config", {
           method: "POST",
@@ -2192,6 +2334,10 @@
         connectSpotify().catch((e) => toast("settingsToast", e.message));
       document.getElementById("refreshHistoryBtn").onclick = () =>
         loadHistory().catch((e) => toast("historyToast", e.message));
+      document.getElementById("textComposer").addEventListener("submit", (e) => {
+        e.preventDefault();
+        sendTypedMessage();
+      });
       setWidgetMode("live");
       setInterval(() => {
         if (document.body.classList.contains("with-widgets"))
@@ -2216,6 +2362,7 @@
         sysStat.textContent = "SYS:ONLINE";
         statusSock.className = "status-item on";
         setState("idle");
+        addLog("system", "Socket connected.", "activity");
       });
 
       socket.on("disconnect", () => {
@@ -2225,6 +2372,7 @@
         sysStat.textContent = "OFFLINE";
         statusSock.className = "status-item";
         setState("connecting");
+        addLog("warn", "Socket disconnected.", "activity");
       });
 
       socket.on("connect_error", () => {
@@ -2244,19 +2392,20 @@
 
       socket.on("state", (data) => {
         setState(data.state);
+        addLog("system", `state: ${data.state}`, "activity");
       });
 
       socket.on("transcript", (data) => {
-        addLog("user", data.text);
+        addLog("user", data.text, "conversation");
       });
 
       socket.on("response", (data) => {
-        addLog("axiom", data.text);
+        addLog("axiom", data.text, "conversation");
       });
 
       socket.on("tool", (data) => {
         const detail = data.input ? JSON.stringify(data.input) : "";
-        addLog("tool", `${data.name}(${detail})`);
+        addLog("tool", `${data.name}(${detail})`, "activity");
         setState("tool");
       });
 
@@ -2270,18 +2419,18 @@
 
       socket.on("log", (data) => {
         const role = data.level || "system";
-        addLog(role, data.text);
+        addLog(role, data.text, "activity");
       });
 
       socket.on("error", (data) => {
-        addLog("error", data.message || data.text || "Unknown error");
+        addLog("error", data.message || data.text || "Unknown error", "activity");
         setState("idle");
       });
 
       socket.on("suggestions_updated", (data) => {
         if (document.getElementById("view-learn").classList.contains("active"))
           loadLearn().catch(() => {});
-        addLog("system", `Reflection complete: ${data.count} new suggestion(s).`);
+        addLog("system", `Reflection complete: ${data.count} new suggestion(s).`, "activity");
       });
 
       // ── Learn tab ───────────────────────────────────────────────────────────

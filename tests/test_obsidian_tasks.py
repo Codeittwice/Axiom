@@ -76,6 +76,16 @@ class ObsidianTasksTest(unittest.TestCase):
 
             self.assertEqual(tasks[0]["text"].split(" due::")[0], "High later task")
 
+    def test_list_tasks_filters_high_priority(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = cfg(tmp)
+            obsidian_tasks.capture_task(config, "High thing", priority="high")
+            obsidian_tasks.capture_task(config, "Low thing", priority="low")
+
+            tasks = obsidian_tasks.list_tasks(config, priority="high")
+
+            self.assertEqual([task["text"].split(" priority::")[0] for task in tasks], ["High thing"])
+
     def test_update_task_edits_text_priority_and_due_date(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = cfg(tmp)
